@@ -119,4 +119,20 @@ DB_HOST=... DB_USER=... DB_PASSWORD=... DB_NAME=... npm run db:seed
 - `src/index.ts`：传统长驻部署入口（`npm run build && npm start`，或 PM2/Docker），调用 `bootstrap` 后 `app.listen()`。
 - `api/index.ts`：Vercel Serverless 函数入口，直接把 `app` 转发给 Vercel 的请求/响应对象，初始化逻辑已经作为中间件挂在 `app` 内部（见 `app.ts` 里 `ensureReady()` 的调用），无需重复处理。
 
-修改业务逻辑（路由、中间件、models、services）时，两种部署方式会同时生效，不需要分别维护。
+## 七、常见问题
+
+### 部署后报错 `Please install mysql2 package manually`
+
+**原因**：Sequelize 内部通过 `require('mysql2')` 动态加载数据库驱动。Vercel 给
+Serverless 函数打包时使用的依赖追踪（Node File Trace）是基于静态分析的，对这种
+嵌套在 `sequelize` 内部深层调用链里的动态 `require()` 经常识别不到，导致 `mysql2`
+没有被打进部署包——`package.json` 里明明写了这个依赖，`npm install` 也确实装了，
+但运行时的函数环境里就是没有这个包。
+
+**已修复**：`src/config/database.ts` 现在显式 `import mysql2 from "mysql2"`，并通过
+Sequelize 的 `dialectModule` 选项直接把这个模块传给 Sequelize，不再依赖它内部的
+动态 `require()`。这样一来 Vercel 的静态追踪能在我们自己的源码里直接看到这行
+`import`，一定会把 `mysql2` 打进部署包；同时 Sequelize 也不会再去尝试自己
+require 一次，从根源上消除了这个问题。如果之后升级 Sequelize 大版本或改用其他
+ORM，注意保留这个显式 import + `dialectModule` 的写法。
+

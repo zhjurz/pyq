@@ -1,4 +1,5 @@
 import { Sequelize } from "sequelize";
+import mysql2 from "mysql2";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -29,6 +30,13 @@ const sequelize = new Sequelize(
     host: process.env.DB_HOST || "127.0.0.1",
     port: Number(process.env.DB_PORT || 3306),
     dialect: "mysql",
+    // Sequelize 内部默认用 require('mysql2') 动态加载驱动。Vercel 的 Serverless
+    // 函数打包（Node File Trace）是基于静态分析的依赖追踪，对这种嵌套在
+    // sequelize 内部的动态 require 经常追踪不到，导致 mysql2 没有被打进部署包，
+    // 运行时报 "Please install mysql2 package manually"。这里显式在业务代码里
+    // 静态 import mysql2 并通过 dialectModule 传入，绕开 Sequelize 内部的动态
+    // require，从根源上解决这个问题（VPS/Docker 部署不受影响，本来就没有这个问题）。
+    dialectModule: mysql2,
     logging: process.env.NODE_ENV === "development" ? console.log : false,
     dialectOptions: {
       // 大多数托管 MySQL（PlanetScale / TiDB Serverless / 阿里云 RDS 等）
