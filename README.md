@@ -521,4 +521,4 @@ cd frontend && pnpm dev
 
 [MIT](LICENSE)
 
-Copyright (c) 2026 zilinnb
+Copyright (c) 2026 reii
