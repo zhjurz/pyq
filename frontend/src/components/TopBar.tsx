@@ -43,7 +43,9 @@ import { getGlobalAudio } from "@/lib/global-audio";
 import { useMusicPlayer } from "@/lib/music-player-store";
 import { Post, MUSIC_PLUGIN_LABELS, type PostLocation, type PostImage, type PostVideo, type PostDouban } from "@/lib/mock-data";
 import { isLivePhoto, getImageSrc } from "@/lib/post-image";
-import { uploadImage, toAbsoluteUrl, toHttps } from "@/lib/upload";
+import { uploadAudio, uploadDirect, uploadImage, uploadVideo, toAbsoluteUrl, toHttps } from "@/lib/upload";
+import { PUBLIC_API_URL } from "@/lib/api-fetch";
+import { splitMotionPhoto } from "@/lib/motion-photo";
 import { useExitAnimation } from "@/lib/use-exit-animation";
 import RichTextEditor from "./RichTextEditor";
 import LazyImage from "./LazyImage";
@@ -55,7 +57,7 @@ import DoubanPicker from "./DoubanPicker";
 import DoubanEmbedCard from "./article/DoubanEmbedCard";
 import DoubanSidebar from "./DoubanSidebar";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
+const API_URL = PUBLIC_API_URL;
 const AUDIO_BASE = API_URL.replace("/api", "");
 
 /** 插件 platform 名 → 对应的真实音乐平台名（复用 mock-data 统一口径） */
@@ -978,41 +980,48 @@ export function PublishModal({
     file: File,
     kind: "image" | "video"
   ): Promise<string | null> => {
-    const endpoint = kind === "image" ? "/upload" : "/upload/video";
-    const field = kind === "image" ? "image" : "video";
-    const formData = new FormData();
-    formData.append(field, file);
-    const res = await fetch(`${API_URL}${endpoint}`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
-    });
-    if (res.ok) {
-      const data = await res.json();
-      return data.url;
+    try {
+      return kind === "image" ? await uploadImage(file, token) : await uploadVideo(file, token);
+    } catch (err: any) {
+      setError(err.message || "上传失败");
+      return null;
     }
-    const err = await res.json().catch(() => ({}));
-    setError(err.message || `上传失败 (${res.status})`);
-    return null;
   };
 
-  // 上传动态照片（单个 JPEG 内嵌 MP4）：后端自动拆分图片+视频
+  const createLivePhotoPair = async (imageFile: File, videoFile: File) => {
+    const [image, video] = await Promise.all([
+      uploadDirect(imageFile, token, "image"),
+      uploadDirect(videoFile, token, "video"),
+    ]);
+    const response = await fetch(`${API_URL}/media/live-photo`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ imageMediaId: image.id, videoMediaId: video.id }),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.message || "实况图配对失败");
+    }
+    return response.json() as Promise<{ image: string; video: string; isLivePhoto: boolean }>;
+  };
+
+  // 浏览器本地拆分 JPEG 内嵌 MP4 后分别直传 R2，避免 Vercel 函数处理大文件。
   const uploadMotionPhoto = async (
     file: File
   ): Promise<{ image: string; video: string | null; isLivePhoto: boolean } | null> => {
-    const formData = new FormData();
-    formData.append("file", file);
-    const res = await fetch(`${API_URL}/upload/motion-photo`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
-    });
-    if (res.ok) {
-      return await res.json();
+    const parts = await splitMotionPhoto(file);
+    if (!parts) {
+      const image = await uploadOne(file, "image");
+      return image ? { image, video: null, isLivePhoto: false } : null;
     }
-    const err = await res.json().catch(() => ({}));
-    setError(err.message || `上传失败 (${res.status})`);
-    return null;
+    const baseName = file.name.replace(/\.[^.]+$/, "");
+    const imageFile = new File([parts.image], `${baseName}.jpg`, { type: "image/jpeg" });
+    const videoFile = new File([parts.video], `${baseName}.mp4`, { type: "video/mp4" });
+    const result = await createLivePhotoPair(imageFile, videoFile);
+    return result;
   };
 
   const handleUpload = async (files: FileList | null) => {
@@ -1068,14 +1077,12 @@ export function PublishModal({
       for (const [, g] of groups) {
         if (images.length + newImages.length >= 9) break;
         if (g.image && g.video) {
-          // 实况图：先传图再传视频
-          const imgUrl = await uploadOne(g.image, "image");
-          if (!imgUrl) continue;
-          const videoUrl = await uploadOne(g.video, "video");
-          if (videoUrl) {
-            newImages.push({ src: imgUrl, video: videoUrl });
-          } else {
-            newImages.push(imgUrl); // 视频上传失败则降级为普通图
+          // 实况图：图片和视频先直传 R2，再由后端建立媒体库配对。
+          try {
+            const pair = await createLivePhotoPair(g.image, g.video);
+            newImages.push({ src: pair.image, video: pair.video });
+          } catch (err: any) {
+            setError(err.message || "实况图上传失败");
           }
         } else if (g.image) {
           const url = await uploadOne(g.image, "image");
@@ -1272,25 +1279,13 @@ export function PublishModal({
     setUploadingAudio(true);
     setError("");
     try {
-      const formData = new FormData();
-      formData.append("audio", file);
-      const res = await fetch(`${API_URL}/upload/audio`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setUploadedAudioUrl(data.url);
-        setUploadedAudioName(file.name);
-        // 自动填充歌名（若用户未填）
-        if (!customMusicName) setCustomMusicName(file.name.replace(/\.[^.]+$/, ""));
-      } else {
-        const err = await res.json().catch(() => ({}));
-        setError(err.message || "上传失败");
-      }
-    } catch {
-      setError("网络错误，上传失败");
+      const url = await uploadAudio(file, token);
+      setUploadedAudioUrl(url);
+      setUploadedAudioName(file.name);
+      // 自动填充歌名（若用户未填）
+      if (!customMusicName) setCustomMusicName(file.name.replace(/\.[^.]+$/, ""));
+    } catch (err: any) {
+      setError(err.message || "上传失败");
     } finally {
       setUploadingAudio(false);
     }

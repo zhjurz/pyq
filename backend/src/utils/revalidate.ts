@@ -5,8 +5,12 @@
  */
 export async function triggerRevalidate(): Promise<void> {
   try {
-    const clientUrl = process.env.CLIENT_URL || "http://localhost:3000";
-    const secret = process.env.REVALIDATE_SECRET || "kanle-revalidate";
+    const clientUrl = (process.env.FRONTEND_REVALIDATE_URL || process.env.CLIENT_URL || "http://localhost:3000").split(",")[0].trim();
+    const secret = process.env.REVALIDATE_SECRET;
+    if (!secret) {
+      console.warn("Revalidation skipped: REVALIDATE_SECRET is not configured.");
+      return;
+    }
     await fetch(`${clientUrl}/api/revalidate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

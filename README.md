@@ -46,13 +46,13 @@
 - 音乐管理：插件/播放列表
 - 广告管理：侧栏广告位
 - 黑名单：IP 防刷
-- 站点设置：SMTP/又拍云/高德地图/豆瓣/RSS
+- 站点设置：SMTP/高德地图/豆瓣/RSS
 - 夜间模式适配，移动端侧滑栏
 
 ### 其他特性
 - **夜间模式** — 手动切换，记忆偏好，全组件适配
 - **响应式设计** — 桌面/移动端完美适配
-- **又拍云存储** — 一键切换本地/CDN
+- **Cloudflare R2 存储** — 浏览器直传，适配 Vercel 大文件上传
 - **RSS 订阅** — 自动生成 Feed
 - **SEO 优化** — SSR + OG 标签
 
@@ -217,8 +217,8 @@ ADMIN_USERNAME=admin
 # 前端地址（有域名填 https://你的域名.com，没域名填 http://服务器IP）
 CLIENT_URL=http://localhost:3000
 
-# 按需重验证密钥（须与前端一致，默认即可）
-REVALIDATE_SECRET=kanle-revalidate
+# 按需重验证密钥（须与前端一致，生产使用随机长字符串）
+REVALIDATE_SECRET=请改为随机长字符串
 ```
 
 构建并初始化数据库：
@@ -269,9 +269,11 @@ BACKEND_URL=http://localhost:4000
 # 站点 URL（可选，用于 Cravatar 默认头像，有域名可设为 https://你的域名.com）
 NEXT_PUBLIC_SITE_URL=
 
-# 按需重验证密钥（须与后端 REVALIDATE_SECRET 一致）
-NEXT_PUBLIC_REVALIDATE_SECRET=kanle-revalidate
-REVALIDATE_SECRET=kanle-revalidate
+# 稳定 R2 媒体域名（用于 Next Image 白名单）
+NEXT_PUBLIC_MEDIA_ORIGIN=https://media.你的域名.com
+
+# 按需重验证密钥（仅服务端使用，须与后端 REVALIDATE_SECRET 一致）
+REVALIDATE_SECRET=请改为随机长字符串
 
 # standalone 服务监听
 PORT=3000
@@ -433,7 +435,7 @@ pm2 restart kanle-frontend
 | 功能 | 位置 | 说明 |
 |---|---|---|
 | SMTP 邮件 | 站点设置 → 邮件配置 | SMTP 服务器、端口、发件箱、可发送测试邮件 |
-| 又拍云存储 | 站点设置 → 又拍云配置 | 服务名、操作员、CDN 域名，一键切换本地/CDN |
+| Cloudflare R2 存储 | 云端存储 | R2 凭据由后端 Vercel 环境变量管理，浏览器直传 R2 |
 | 高德地图 | 站点设置 → 高德地图配置 | JS API Key + Web 服务 Key，[高德开放平台](https://lbs.amap.com/)申请 |
 | 音乐插件 | 音乐管理 → 插件管理 | 上传 `.js` 插件或填写订阅 URL，支持酷狗/QQ/网易云/酷我 |
 | 豆瓣影单 | 站点设置 → 豆瓣配置 | 豆瓣 ID，自动同步电影/图书/音乐 |
@@ -451,7 +453,7 @@ pm2 restart kanle-frontend
 <details>
 <summary>发动态后刷新页面没看到更新？</summary>
 
-检查后端 `.env` 的 `REVALIDATE_SECRET` 与前端 `.env.local` 的 `REVALIDATE_SECRET` / `NEXT_PUBLIC_REVALIDATE_SECRET` 是否一致。
+检查后端 `.env` 的 `REVALIDATE_SECRET` 与前端 `.env.local` 的 `REVALIDATE_SECRET` 是否一致。该值不会暴露给浏览器。
 </details>
 
 <details>
@@ -475,9 +477,9 @@ node dist/scripts/reset-password.js
 <details>
 <summary>上传的图片显示不出来？</summary>
 
-- 确认 Nginx 配置中 `/uploads/` 的 `alias` 路径正确指向 `backend/public/uploads/`
-- 确认后端 `public/uploads/` 目录存在且有读写权限
-- 如使用 CDN 域名，需在 `frontend/next.config.ts` 的 `images.remotePatterns` 中添加域名
+- 确认后端已配置完整 R2 环境变量并在 R2 Bucket 为前端域名允许 `PUT`/`GET`/`HEAD` 与 `Content-Type` CORS
+- 确认 `R2_PUBLIC_URL` 的域名已配置为前端 `NEXT_PUBLIC_MEDIA_ORIGIN`
+- 确认该媒体域名已在 `frontend/next.config.ts` 的远程图片白名单中生效
 </details>
 
 <details>

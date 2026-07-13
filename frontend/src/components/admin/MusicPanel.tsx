@@ -4,11 +4,12 @@ import { useEffect, useState } from "react";
 import { Loader2, X, Music, Upload, ImagePlus, Search } from "lucide-react";
 import type { PostMusic } from "@/lib/mock-data";
 import { MUSIC_PLUGIN_LABELS } from "@/lib/mock-data";
-import { uploadImage, toAbsoluteUrl, toHttps } from "@/lib/upload";
+import { uploadAudio, uploadImage, toAbsoluteUrl, toHttps } from "@/lib/upload";
+import { PUBLIC_API_URL } from "@/lib/api-fetch";
 import LyricEditor from "@/components/LyricEditor";
 import AdminModal from "./AdminModal";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
+const API_URL = PUBLIC_API_URL;
 const PLATFORM_MAP = MUSIC_PLUGIN_LABELS;
 
 interface MusicPanelProps {
@@ -182,24 +183,12 @@ export default function MusicPanel({
     setUploadingAudio(true);
     setError("");
     try {
-      const formData = new FormData();
-      formData.append("audio", file);
-      const res = await fetch(`${API_URL}/upload/audio`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setAudioUrl(data.url);
-        setAudioName(file.name);
-        if (!name) setName(file.name.replace(/\.[^.]+$/, ""));
-      } else {
-        const err = await res.json().catch(() => ({}));
-        setError(err.message || "上传失败");
-      }
-    } catch {
-      setError("网络错误，上传失败");
+      const url = await uploadAudio(file, token);
+      setAudioUrl(url);
+      setAudioName(file.name);
+      if (!name) setName(file.name.replace(/\.[^.]+$/, ""));
+    } catch (err: any) {
+      setError(err.message || "上传失败");
     } finally {
       setUploadingAudio(false);
     }

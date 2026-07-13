@@ -7,9 +7,7 @@ import { PostCardSkeleton } from "@/components/Skeleton";
 import { useSiteSettings } from "@/lib/site-settings-store";
 import { authFetchHeaders } from "@/lib/auth";
 
-const REVALIDATE_SECRET = process.env.NEXT_PUBLIC_REVALIDATE_SECRET || "kanle-revalidate";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
 const PAGE_SIZE = 10;
 
 interface PostListProps {
@@ -70,23 +68,9 @@ export default function PostList({ initialPosts, initialHasMore, initialPage }: 
       .catch(() => {});
   }, []);
 
-  // 监听动态发布/编辑事件：
-  // 1) 客户端立即拉取第一页数据，绕过 ISR 缓存，瞬间显示最新内容
-  // 2) 触发服务端按需 revalidate（重新生成首页 HTML），让刷新页面也能立即看到最新内容
-  // 3) 调用 router.refresh() 重新执行 Server Components，刷新整页数据
+  // 发布/编辑后的即时刷新由客户端重新拉取数据和 router.refresh() 完成；
+  // 缓存失效由后端的服务端 revalidate 回调处理，不向浏览器暴露密钥。
   useEffect(() => {
-    const triggerRevalidate = async () => {
-      try {
-        await fetch("/api/revalidate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ secret: REVALIDATE_SECRET }),
-        });
-      } catch {
-        // 静默失败
-      }
-    };
-
     const refreshFirstPage = async () => {
       try {
         const email = (typeof window !== "undefined" && localStorage.getItem("visitor_email")) || "";
@@ -111,8 +95,7 @@ export default function PostList({ initialPosts, initialHasMore, initialPage }: 
     const handler = async () => {
       // 客户端立即拉取最新数据
       await refreshFirstPage();
-      // 同时触发服务端 ISR 重生成 + router.refresh，确保刷新页面立即看到最新内容
-      triggerRevalidate();
+      // 服务端 ISR 由后端写操作回调触发；客户端只刷新自身数据。
       router.refresh();
     };
 

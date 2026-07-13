@@ -1,4 +1,8 @@
-const PUBLIC_API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
+export const PUBLIC_API_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
+
+function getBackendOrigin() {
+  return (process.env.BACKEND_URL || "http://localhost:4000").replace(/\/+$/, "");
+}
 
 /**
  * 获取 API URL。
@@ -7,7 +11,7 @@ const PUBLIC_API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000
  */
 export function getApiUrl() {
   if (typeof window === "undefined" && PUBLIC_API_URL.startsWith("/")) {
-    return `${process.env.BACKEND_URL || "http://localhost:4000"}${PUBLIC_API_URL}`;
+    return `${getBackendOrigin()}${PUBLIC_API_URL}`;
   }
   return PUBLIC_API_URL;
 }

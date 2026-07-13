@@ -9,6 +9,7 @@ import FriendLink from "./FriendLink";
 import Blacklist from "./Blacklist";
 import Media from "./Media";
 import MusicSource from "./MusicSource";
+import UploadIntent from "./UploadIntent";
 
 // Associations
 User.hasMany(Post, { foreignKey: "userId", as: "posts" });
@@ -31,5 +32,5 @@ User.hasMany(CommentLike, { foreignKey: "userId", as: "userCommentLikes" });
 Media.belongsTo(User, { foreignKey: "uploaderId", as: "uploader" });
 User.hasMany(Media, { foreignKey: "uploaderId", as: "uploadedMedia" });
 
-export { sequelize, User, Post, Comment, Like, CommentLike, SiteSetting, FriendLink, Blacklist, Media, MusicSource };
+export { sequelize, User, Post, Comment, Like, CommentLike, SiteSetting, FriendLink, Blacklist, Media, MusicSource, UploadIntent };
 export { getMediaCategory } from "./Media";

@@ -3,10 +3,11 @@
 import { useEffect, useState, useRef } from "react";
 import { Loader2, X, Video, Upload, Link2, Code2, Play } from "lucide-react";
 import type { PostVideo } from "@/lib/mock-data";
-import { toAbsoluteUrl } from "@/lib/upload";
+import { toAbsoluteUrl, uploadVideo } from "@/lib/upload";
+import { PUBLIC_API_URL } from "@/lib/api-fetch";
 import AdminModal from "./AdminModal";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
+const API_URL = PUBLIC_API_URL;
 
 interface VideoPanelProps {
   open: boolean;
@@ -107,22 +108,10 @@ export default function VideoPanel({
     setUploading(true);
     setError("");
     try {
-      const formData = new FormData();
-      formData.append("video", file);
-      const res = await fetch(`${API_URL}/upload/video`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setResult({ url: data.url, source: "upload", platform: "upload" });
-      } else {
-        const err = await res.json().catch(() => ({ message: "上传失败" }));
-        setError(err.message || "上传失败");
-      }
-    } catch {
-      setError("网络错误，上传失败");
+      const url = await uploadVideo(file, token);
+      setResult({ url, source: "upload", platform: "upload" });
+    } catch (err: any) {
+      setError(err.message || "上传失败");
     } finally {
       setUploading(false);
     }

@@ -1,6 +1,6 @@
 /**
  * 上传路由
- * 图片/音频/视频上传，自动选择存储方式：R2（环境变量配置） > 又拍云（后台配置） > 本地磁盘（仅非 Serverless）。
+ * 图片/音频/视频上传统一存储到 Cloudflare R2。
  * 所有上传的文件都会记录到 Media 表（媒体库）。
  *
  * Vercel Serverless 函数请求体上限约 4.5MB（平台硬限制，无法通过配置提高），
@@ -23,7 +23,7 @@ import { extractMotionPhoto } from "../services/motion-photo";
 
 const router = Router();
 
-// memoryStorage：由路由处理器决定存储位置（R2 / 又拍云 / 本地）
+// memoryStorage：传统部署的小文件兼容路径。生产上传应走 R2 直传。
 const storage = multer.memoryStorage();
 
 const IMAGE_MIMES = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/jpg"];
@@ -281,47 +281,6 @@ router.post("/motion-photo/confirm", authenticate, requireAdmin, async (req: Aut
     }
   } catch (err: any) {
     res.status(500).json({ message: err.message || "动态照片处理失败" });
-  }
-});
-
-// POST /api/upload/test-upyun - test Upyun connection (admin only)
-router.post("/test-upyun", authenticate, requireAdmin, async (_req: AuthRequest, res) => {
-  try {
-    const { isUpyunReady, getUpyunConfig, uploadToUpyun } = await import("../services/upyun-service");
-    const ready = await isUpyunReady();
-    if (!ready) {
-      res.status(400).json({
-        success: false,
-        message: "又拍云未启用或配置不完整（需要启用 + bucket + 操作员 + 密码 + 域名）",
-      });
-      return;
-    }
-    const cfg = await getUpyunConfig();
-    const testBuffer = Buffer.from("upyun-connection-test");
-    const testPath = `test/conn-${Date.now()}.txt`;
-    const url = await uploadToUpyun(testBuffer, testPath, "text/plain");
-    res.json({
-      success: true,
-      message: "连接成功，文件已上传到又拍云",
-      url,
-      https: url.startsWith("https://"),
-    });
-  } catch (err: any) {
-    res.status(400).json({ success: false, message: err.message || "又拍云连接失败" });
-  }
-});
-
-// POST /api/upload/migrate-to-upyun - 迁移本地文件到又拍云（管理员）
-// 注意：该接口扫描本地磁盘 public/uploads 目录，仅在传统部署（VPS/Docker）
-// 下有意义；Vercel Serverless 部署没有本地磁盘文件可迁移，调用会返回
-// totalFiles: 0。
-router.post("/migrate-to-upyun", authenticate, requireAdmin, async (_req: AuthRequest, res) => {
-  try {
-    const { migrateLocalToUpyun } = await import("../services/migrate-service");
-    const result = await migrateLocalToUpyun();
-    res.json({ success: true, result });
-  } catch (err: any) {
-    res.status(500).json({ success: false, message: err.message || "迁移失败" });
   }
 });
 

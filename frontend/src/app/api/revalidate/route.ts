@@ -3,8 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest) {
   const { secret } = await request.json();
-  const expected = process.env.REVALIDATE_SECRET || "kanle-revalidate";
-  if (secret !== expected) {
+  const expected = process.env.REVALIDATE_SECRET;
+  if (!expected || secret !== expected) {
     return NextResponse.json({ message: "Invalid secret" }, { status: 401 });
   }
   revalidatePath("/", "layout");

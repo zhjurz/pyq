@@ -89,13 +89,6 @@ router.put(
     body("smtpPass").optional().trim().isLength({ max: 255 }),
     body("smtpFrom").optional().trim().isLength({ max: 255 }),
     body("emailTemplate").optional().isString(),
-    // Upyun config
-    body("upyunEnabled").optional().isBoolean(),
-    body("upyunBucket").optional().trim().isLength({ max: 100 }),
-    body("upyunOperator").optional().trim().isLength({ max: 100 }),
-    body("upyunPassword").optional().trim().isLength({ max: 255 }),
-    body("upyunDomain").optional().trim().isLength({ max: 255 }),
-    body("upyunPath").optional().trim().isLength({ max: 255 }),
     // Amap config
     body("amapKey").optional().trim().isLength({ max: 255 }),
     body("amapJsKey").optional().trim().isLength({ max: 255 }),
@@ -143,12 +136,6 @@ router.put(
       smtpPass: req.body.smtpPass ?? setting.smtpPass,
       smtpFrom: req.body.smtpFrom ?? setting.smtpFrom,
       emailTemplate: req.body.emailTemplate ?? setting.emailTemplate,
-      upyunEnabled: req.body.upyunEnabled ?? setting.upyunEnabled,
-      upyunBucket: req.body.upyunBucket ?? setting.upyunBucket,
-      upyunOperator: req.body.upyunOperator ?? setting.upyunOperator,
-      upyunPassword: req.body.upyunPassword ?? setting.upyunPassword,
-      upyunDomain: req.body.upyunDomain ?? setting.upyunDomain,
-      upyunPath: req.body.upyunPath ?? setting.upyunPath,
       amapKey: req.body.amapKey ?? setting.amapKey,
       amapJsKey: req.body.amapJsKey ?? setting.amapJsKey,
       amapSecurityJsCode: req.body.amapSecurityJsCode ?? setting.amapSecurityJsCode,
@@ -194,19 +181,6 @@ router.get("/email-config", authenticate, requireAdmin, async (_req: AuthRequest
     smtpFrom: setting.smtpFrom,
     notifyEmail: setting.notifyEmail,
     emailTemplate: setting.emailTemplate,
-  });
-});
-
-// GET /api/settings/upyun-config - upyun config (admin only, includes upyunPassword)
-router.get("/upyun-config", authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
-  const setting = await ensureSetting();
-  res.json({
-    upyunEnabled: setting.upyunEnabled,
-    upyunBucket: setting.upyunBucket,
-    upyunOperator: setting.upyunOperator,
-    upyunPassword: setting.upyunPassword,
-    upyunDomain: setting.upyunDomain,
-    upyunPath: setting.upyunPath,
   });
 });
 

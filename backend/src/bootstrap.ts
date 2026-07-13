@@ -2,10 +2,8 @@
  * 应用初始化（数据库连接 + 模型同步 + 插件预热 + 黑名单清理）
  *
  * 传统部署（PM2/Docker）：src/index.ts 在进程启动时调用一次，随后常驻。
- * Vercel Serverless：每个函数实例（冷启动）调用一次；同一实例后续的
- * "热调用" 会复用已缓存的 Promise，不会重复连接/同步，避免每次请求
- *都打一次 sequelize.sync()。不同函数实例之间互不共享内存，这是
- * Serverless 架构的正常特性（详见 VERCEL_DEPLOYMENT.md）。
+ * 生产 Vercel 实例只验证数据库连接并预热运行时状态；建表必须通过
+ * `npm run db:sync` 在部署前受控执行，避免冷启动触发 DDL 竞争。
  */
 import { sequelize } from "./models";
 import { loadAllPlugins } from "./music-sources/mf-manager";
@@ -16,11 +14,12 @@ async function doBootstrap(): Promise<void> {
   await sequelize.authenticate();
   console.log("Database connected.");
 
-  // sync() 只会创建缺失的表，不会 alter 已存在的表结构。
-  // 表结构变更通过手动 SQL 管理，避免 sync({alter:true}) 导致的
-  // 索引重复累积 / ENUM 前导空格等问题。
-  await sequelize.sync();
-  console.log("Models synchronized.");
+  // Serverless 生产请求禁止执行 DDL。首次建表和版本升级必须通过
+  // `npm run db:sync` 在部署前受控完成，避免多个冷启动实例并发 sync。
+  if (!process.env.VERCEL || process.env.DB_SYNC_ON_BOOT === "true") {
+    await sequelize.sync();
+    console.log("Models synchronized.");
+  }
 
   // 启动时清理已过期的黑名单记录（失败不阻断启动）
   try {

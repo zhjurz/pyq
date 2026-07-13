@@ -1,51 +1,70 @@
 /**
  * 媒体库路由
  * 提供媒体文件的列表、上传、删除功能。
- * 上传时根据又拍云配置自动选择存储方式（又拍云 / 本地）。
- * 所有上传的文件都会记录到 Media 表中，形成 WordPress 风格的媒体库。
+ * 上传通过受控 R2 直传完成，并自动登记到 Media 表。
  */
 import { Router, Request, Response } from "express";
 import path from "path";
-import fs from "fs";
-import multer from "multer";
 import { param, validationResult } from "express-validator";
-import { Media, User, Post, FriendLink, SiteSetting, getMediaCategory } from "../models";
+import { Media, UploadIntent, User, getMediaCategory } from "../models";
 import { authenticate, requireAdmin, AuthRequest } from "../middleware/auth";
-import { getUpyunConfig } from "../services/upyun-service";
-import { storeBuffer, deleteStoredFile, createPresignedUpload, isR2Ready } from "../services/storage-service";
+import { deleteStoredFile, isR2Ready } from "../services/storage-service";
+import {
+  buildObjectKey,
+  buildStagingKey,
+  createPresignedUploadForKey,
+  promoteR2Object,
+  statR2Object,
+} from "../services/r2-service";
 
 const router = Router();
 
-// 上传目录（本地存储回退，仅非 Serverless 部署使用）。
-// Vercel 上文件系统只读，此处必须判断 !isServerless 再 mkdir，
-// 否则模块加载时就会抛 EROFS 导致整个应用启动失败。
-const isServerless = !!process.env.VERCEL;
-const uploadDir = path.join(__dirname, "../../public/uploads");
-if (!isServerless && !fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-// memoryStorage：文件暂存内存，由路由处理器决定存到又拍云还是本地
-const mediaStorage = multer.memoryStorage();
-
-// 通用上传：图片 5MB / 音频 20MB / 视频 50MB / 其他文件 50MB
-const mediaUpload = multer({
-  storage: mediaStorage,
-  limits: { fileSize: 50 * 1024 * 1024 },
-  fileFilter: (_req, file, cb) => {
-    // 允许所有常见文件类型
-    const blocked = [
-      "text/html",
-      "application/javascript",
-      "application/xhtml+xml",
-    ];
-    if (blocked.includes(file.mimetype)) {
-      cb(new Error("不支持此文件类型"));
-      return;
-    }
-    cb(null, true);
+const DIRECT_UPLOAD_RULES = {
+  image: {
+    mimes: new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]),
+    extensions: new Set([".jpg", ".jpeg", ".png", ".gif", ".webp"]),
+    maxSize: 20 * 1024 * 1024,
   },
-});
+  video: {
+    mimes: new Set(["video/quicktime", "video/mp4", "video/webm", "video/3gpp", "video/3gp", "video/x-m4v"]),
+    extensions: new Set([".mp4", ".mov", ".webm", ".3gp", ".m4v"]),
+    maxSize: 100 * 1024 * 1024,
+  },
+  audio: {
+    mimes: new Set(["audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav", "audio/ogg", "audio/aac"]),
+    extensions: new Set([".mp3", ".wav", ".ogg", ".aac"]),
+    maxSize: 50 * 1024 * 1024,
+  },
+  file: {
+    mimes: new Set<string>(),
+    extensions: new Set<string>(),
+    maxSize: 50 * 1024 * 1024,
+  },
+} as const;
+
+type DirectUploadKind = keyof typeof DIRECT_UPLOAD_RULES;
+
+function getDirectUploadRule(kind: unknown, filename: string, mimeType: unknown) {
+  if (typeof kind !== "string" || !(kind in DIRECT_UPLOAD_RULES)) {
+    throw new Error("不支持的上传类型");
+  }
+  if (typeof filename !== "string" || !filename.trim() || filename.length > 255) {
+    throw new Error("文件名无效");
+  }
+  if (typeof mimeType !== "string" || !mimeType) {
+    throw new Error("文件类型无效");
+  }
+
+  const rule = DIRECT_UPLOAD_RULES[kind as DirectUploadKind];
+  const ext = path.extname(filename).toLowerCase();
+  if (kind === "file") {
+    const blocked = new Set(["text/html", "application/javascript", "application/xhtml+xml", "image/svg+xml"]);
+    if (blocked.has(mimeType)) throw new Error("不支持此文件类型");
+  } else if (!rule.mimes.has(mimeType) || !rule.extensions.has(ext)) {
+    throw new Error("文件扩展名或 MIME 类型不被允许");
+  }
+  return { kind: kind as DirectUploadKind, rule };
+}
 
 /** 格式化媒体记录为 API 响应 */
 function formatMedia(media: any) {
@@ -128,97 +147,82 @@ router.get(
   }
 );
 
-// POST /api/media/upload — 上传媒体文件（图片/音频/视频/其他文件）
-router.post(
-  "/upload",
-  authenticate,
-  requireAdmin,
-  mediaUpload.single("file"),
-  async (req: AuthRequest, res: Response) => {
-    if (!req.file) {
-      res.status(400).json({ message: "没有上传文件" });
-      return;
-    }
-
-    const file = req.file;
-    const mimeType = file.mimetype;
-    const originalName = file.originalname;
-
-    let url: string;
-    let storageType: "r2" | "upyun" | "local";
-
-    try {
-      const stored = await storeBuffer(file.buffer, originalName, mimeType, "media");
-      url = stored.url;
-      storageType = stored.storageType;
-    } catch (err: any) {
-      res.status(500).json({ message: err.message || "文件上传失败" });
-      return;
-    }
-
-    // 记录到 Media 表
-    const media = await Media.create({
-      filename: originalName,
-      url,
-      storageType,
-      mimeType,
-      size: file.size,
-      uploaderId: req.user!.id,
-    });
-
-    const full = await Media.findByPk(media.id, {
-      include: [
-        { model: User, as: "uploader", attributes: ["id", "username", "nickname"] },
-      ],
-    });
-
-    res.status(201).json(formatMedia(full));
-  }
-);
-
-// POST /api/media/presign — 获取预签名直传 URL（大文件绕开 Vercel 函数体积上限，仅 R2 支持）
-// body: { filename: string, mimeType: string }
+// POST /api/media/presign — 创建受控的 R2 暂存上传（仅管理员）
+// body: { filename: string, mimeType: string, kind: "image"|"video"|"audio"|"file" }
 router.post("/presign", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
-  const { filename, mimeType } = req.body || {};
-  if (!filename || typeof filename !== "string") {
-    res.status(400).json({ message: "缺少 filename 参数" });
+  const { filename, mimeType, kind } = req.body || {};
+  if (!isR2Ready()) {
+    res.status(400).json({ message: "R2 存储未配置" });
     return;
   }
+
   try {
-    const { uploadUrl, publicUrl, key } = await createPresignedUpload(
-      filename,
-      typeof mimeType === "string" ? mimeType : "application/octet-stream",
-      "media"
-    );
-    res.json({ uploadUrl, publicUrl, key, expiresIn: 600 });
+    const { kind: approvedKind, rule } = getDirectUploadRule(kind, filename, mimeType);
+    const intent = await UploadIntent.create({
+      uploaderId: req.user!.id,
+      kind: approvedKind,
+      filename: path.basename(filename),
+      mimeType,
+      maxSize: rule.maxSize,
+      stagingKey: "pending",
+      finalKey: "pending",
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+    });
+    const stagingKey = buildStagingKey(intent.id, intent.filename);
+    const finalKey = buildObjectKey("media", intent.filename);
+    await intent.update({ stagingKey, finalKey });
+    const { uploadUrl } = await createPresignedUploadForKey(stagingKey, intent.mimeType);
+    res.json({ intentId: intent.id, uploadUrl, expiresIn: 600, maxSize: rule.maxSize });
   } catch (err: any) {
     res.status(400).json({ message: err.message || "获取直传地址失败" });
   }
 });
 
-// POST /api/media/confirm — 直传完成后登记到媒体库
-// body: { key: string, filename: string, mimeType: string, size?: number }
+// POST /api/media/confirm — 验证暂存对象、提升到公开路径并登记媒体库
+// body: { intentId: string }
 router.post("/confirm", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
-  const { key, filename, mimeType, size } = req.body || {};
-  if (!key || typeof key !== "string") {
-    res.status(400).json({ message: "缺少 key 参数" });
+  const { intentId } = req.body || {};
+  if (typeof intentId !== "string") {
+    res.status(400).json({ message: "缺少 intentId 参数" });
     return;
   }
-  if (!isR2Ready()) {
-    res.status(400).json({ message: "R2 存储未配置" });
-    return;
-  }
+
   try {
-    const publicUrl = (process.env.R2_PUBLIC_URL || "").replace(/\/+$/, "");
-    const url = `${publicUrl}/${key}`;
+    const intent = await UploadIntent.findOne({ where: { id: intentId, uploaderId: req.user!.id } });
+    if (!intent) {
+      res.status(404).json({ message: "上传请求不存在" });
+      return;
+    }
+    if (intent.status === "confirmed") {
+      res.status(409).json({ message: "文件已经确认上传" });
+      return;
+    }
+    if (intent.expiresAt.getTime() <= Date.now()) {
+      await intent.update({ status: "expired" });
+      res.status(410).json({ message: "上传请求已过期，请重新选择文件" });
+      return;
+    }
+
+    const object = await statR2Object(intent.stagingKey);
+    if (!object || object.size <= 0) {
+      res.status(400).json({ message: "未找到已上传的文件，请重新上传" });
+      return;
+    }
+    if (object.size > Number(intent.maxSize) || object.contentType !== intent.mimeType) {
+      res.status(400).json({ message: "上传文件与已批准的类型或大小不匹配" });
+      return;
+    }
+
+    const url = await promoteR2Object(intent.stagingKey, intent.finalKey, intent.mimeType);
     const media = await Media.create({
-      filename: filename || key,
+      filename: intent.filename,
       url,
       storageType: "r2",
-      mimeType: mimeType || "application/octet-stream",
-      size: Number(size) || 0,
-      uploaderId: req.user!.id,
+      mimeType: intent.mimeType,
+      size: object.size,
+      uploaderId: intent.uploaderId,
     });
+    await intent.update({ status: "confirmed", confirmedAt: new Date() });
     const full = await Media.findByPk(media.id, {
       include: [{ model: User, as: "uploader", attributes: ["id", "username", "nickname"] }],
     });
@@ -226,6 +230,31 @@ router.post("/confirm", authenticate, requireAdmin, async (req: AuthRequest, res
   } catch (err: any) {
     res.status(500).json({ message: err.message || "登记媒体记录失败" });
   }
+});
+
+// POST /api/media/live-photo — 将同一管理员上传的图片和视频登记为实况图配对
+// body: { imageMediaId: string, videoMediaId: string }
+router.post("/live-photo", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  const { imageMediaId, videoMediaId } = req.body || {};
+  if (typeof imageMediaId !== "string" || typeof videoMediaId !== "string") {
+    res.status(400).json({ message: "缺少图片或视频媒体 ID" });
+    return;
+  }
+
+  const [image, video] = await Promise.all([
+    Media.findOne({ where: { id: imageMediaId, uploaderId: req.user!.id } }),
+    Media.findOne({ where: { id: videoMediaId, uploaderId: req.user!.id } }),
+  ]);
+  if (!image || !video || !image.mimeType.startsWith("image/") || !video.mimeType.startsWith("video/")) {
+    res.status(400).json({ message: "实况图配对必须使用本人上传的图片和视频" });
+    return;
+  }
+
+  await Promise.all([
+    image.update({ livePhotoVideo: video.url }),
+    video.update({ livePhotoImage: image.url }),
+  ]);
+  res.json({ image: image.url, video: video.url, isLivePhoto: true });
 });
 
 // DELETE /api/media/:id — 删除媒体文件
@@ -247,297 +276,15 @@ router.delete(
       return;
     }
 
-    // 删除远端文件（R2 / 又拍云 / 本地，失败不阻塞记录删除）
+    // 删除 R2 对象失败不阻塞记录删除
     try {
-      await deleteStoredFile(media.url, media.storageType as "r2" | "upyun" | "local");
+      await deleteStoredFile(media.url, "r2");
     } catch {
       console.log(`[media] 远端文件删除失败: ${media.url}`);
     }
 
     await media.destroy();
     res.status(204).send();
-  }
-);
-
-/**
- * 扩展名 → MIME 类型映射表，用于导入本地已存在但未登记到 media 表的文件。
- */
-const EXT_TO_MIME: Record<string, string> = {
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".png": "image/png",
-  ".gif": "image/gif",
-  ".webp": "image/webp",
-  ".bmp": "image/bmp",
-  ".svg": "image/svg+xml",
-  ".mp3": "audio/mpeg",
-  ".wav": "audio/wav",
-  ".ogg": "audio/ogg",
-  ".aac": "audio/aac",
-  ".m4a": "audio/mp4",
-  ".flac": "audio/flac",
-  ".mp4": "video/mp4",
-  ".mov": "video/quicktime",
-  ".webm": "video/webm",
-  ".avi": "video/x-msvideo",
-  ".mkv": "video/x-matroska",
-  ".pdf": "application/pdf",
-  ".zip": "application/zip",
-  ".txt": "text/plain",
-  ".doc": "application/msword",
-  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-};
-
-/** 递归扫描本地 uploads 目录，返回所有文件的绝对路径 */
-function scanUploadDir(dir: string, baseDir: string): Array<{ fullPath: string; relPath: string }> {
-  const results: Array<{ fullPath: string; relPath: string }> = [];
-  if (!fs.existsSync(dir)) return results;
-  let entries: fs.Dirent[];
-  try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return results;
-  }
-  for (const entry of entries) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      results.push(...scanUploadDir(full, baseDir));
-    } else if (entry.isFile()) {
-      const rel = path.relative(baseDir, full).split(path.sep).join("/");
-      results.push({ fullPath: full, relPath: rel });
-    }
-  }
-  return results;
-}
-
-/**
- * 从 URL 提取文件名（含扩展名）。
- * 例：https://cdn.example.com/media/2026/01/abc.jpg → abc.jpg
- *     /uploads/2026/01/abc.jpg → abc.jpg
- */
-function extractFilename(url: string): string {
-  try {
-    const clean = url.split("?")[0].split("#")[0];
-    const parts = clean.split("/");
-    return parts[parts.length - 1] || clean;
-  } catch {
-    return url;
-  }
-}
-
-/** 从 URL 扩展名推断 MIME 类型 */
-function mimeFromUrl(url: string): string {
-  const clean = url.split("?")[0].split("#")[0];
-  const ext = path.extname(clean).toLowerCase();
-  return EXT_TO_MIME[ext] || "application/octet-stream";
-}
-
-/** 判断 URL 是否为本地 /uploads/ 路径 */
-function isLocalUploadUrl(url: string): boolean {
-  return url.startsWith("/uploads/") || url.startsWith("uploads/");
-}
-
-/**
- * POST /api/media/import — 导入已存在但未登记的文件到媒体库。
- *
- * 导入流程：
- * 1. 扫描本地 /uploads/ 目录递归所有文件
- * 2. 对每个文件，按 url 查重；已存在则跳过
- * 3. 扫描数据库（posts/users/friend_links/site_settings）中引用的又拍云 URL
- *    为未登记的又拍云文件创建 Media 记录
- * 4. 扫描 posts.images 中所有 {src, video} 配对，回填 livePhotoVideo / livePhotoImage
- *
- * 默认 uploader 使用第一个管理员用户。
- */
-router.post(
-  "/import",
-  authenticate,
-  requireAdmin,
-  async (req: AuthRequest, res: Response) => {
-    try {
-      // 1. 找一个管理员作为默认 uploader
-      const admin = await User.findOne({
-        where: { role: "admin" },
-        attributes: ["id", "username", "nickname"],
-      });
-      if (!admin) {
-        res.status(400).json({ message: "未找到管理员账号，无法导入" });
-        return;
-      }
-
-      let imported = 0;
-      let skipped = 0;
-      let failed = 0;
-      let cloudImported = 0;
-
-      // 2. 扫描本地 uploads 目录
-      const scanned = scanUploadDir(uploadDir, uploadDir);
-      for (const { fullPath, relPath } of scanned) {
-        const url = `/uploads/${relPath}`;
-        try {
-          const existing = await Media.findOne({ where: { url }, attributes: ["id"] });
-          if (existing) {
-            skipped++;
-            continue;
-          }
-          const ext = path.extname(relPath).toLowerCase();
-          const mimeType = EXT_TO_MIME[ext] || "application/octet-stream";
-          const stat = fs.statSync(fullPath);
-          const filename = path.basename(relPath);
-          await Media.create({
-            filename,
-            url,
-            storageType: "local",
-            mimeType,
-            size: stat.size,
-            uploaderId: admin.id,
-            livePhotoVideo: null,
-            livePhotoImage: null,
-          });
-          imported++;
-        } catch {
-          failed++;
-        }
-      }
-
-      // 3. 扫描数据库引用的又拍云 URL
-      const cfg = await getUpyunConfig();
-      const cloudDomain = cfg.domain;
-      if (cloudDomain) {
-        const cloudUrls = new Set<string>();
-
-        // 收集所有可能引用又拍云文件的 URL
-        // posts.images (string[] | {src, video}[])
-        const posts = await Post.findAll({ attributes: ["id", "images", "video", "music", "linkCard", "adAvatar"] });
-        for (const post of posts) {
-          // images
-          const imgs = post.images as any;
-          if (Array.isArray(imgs)) {
-            for (const img of imgs) {
-              if (typeof img === "string") {
-                cloudUrls.add(img);
-              } else if (img && typeof img === "object") {
-                if (img.src) cloudUrls.add(img.src);
-                if (img.video) cloudUrls.add(img.video);
-              }
-            }
-          }
-          // video JSON
-          const vid = post.video as any;
-          if (vid && typeof vid === "object") {
-            if (vid.url) cloudUrls.add(vid.url);
-            if (vid.cover) cloudUrls.add(vid.cover);
-          }
-          // music JSON（只导入 cover，url 是外部音乐源不导入）
-          const music = post.music as any;
-          if (music && typeof music === "object" && music.cover) {
-            cloudUrls.add(music.cover);
-          }
-          // linkCard JSON
-          const card = post.linkCard as any;
-          if (card && typeof card === "object" && card.image) {
-            cloudUrls.add(card.image);
-          }
-          // adAvatar
-          if (post.adAvatar) cloudUrls.add(post.adAvatar);
-        }
-
-        // users.avatar, users.cover
-        const users = await User.findAll({ attributes: ["id", "avatar", "cover"] });
-        for (const u of users) {
-          if (u.avatar) cloudUrls.add(u.avatar);
-          if (u.cover) cloudUrls.add(u.cover);
-        }
-
-        // friend_links.avatar
-        const friends = await FriendLink.findAll({ attributes: ["id", "avatar"] });
-        for (const f of friends) {
-          if (f.avatar) cloudUrls.add(f.avatar);
-        }
-
-        // site_settings (favicon_url, og_image, music_url, font_url)
-        const setting = await SiteSetting.findByPk(1);
-        if (setting) {
-          const s = setting as any;
-          if (s.faviconUrl) cloudUrls.add(s.faviconUrl);
-          if (s.ogImage) cloudUrls.add(s.ogImage);
-          if (s.musicUrl) cloudUrls.add(s.musicUrl);
-          if (s.fontUrl) cloudUrls.add(s.fontUrl);
-        }
-
-        // 筛选出又拍云域名的 URL，排除本地 /uploads/ 和外部 URL
-        for (const url of cloudUrls) {
-          if (!url || typeof url !== "string") continue;
-          if (isLocalUploadUrl(url)) continue; // 本地文件已在上面扫描
-          if (!url.startsWith(cloudDomain)) continue; // 非又拍云域名跳过
-          try {
-            const existing = await Media.findOne({ where: { url }, attributes: ["id"] });
-            if (existing) {
-              skipped++;
-              continue;
-            }
-            const filename = extractFilename(url);
-            const mimeType = mimeFromUrl(url);
-            await Media.create({
-              filename,
-              url,
-              storageType: "upyun",
-              mimeType,
-              size: 0, // 又拍云文件无法直接获取大小
-              uploaderId: admin.id,
-              livePhotoVideo: null,
-              livePhotoImage: null,
-            });
-            cloudImported++;
-          } catch {
-            failed++;
-          }
-        }
-      }
-
-      // 4. 扫描 posts.images 建立实况图配对关系
-      let pairsLinked = 0;
-      try {
-        const allPosts = await Post.findAll({
-          attributes: ["id", "images"],
-          where: { images: { [require("sequelize").Op.ne]: null } },
-        });
-        for (const post of allPosts) {
-          const imgs = post.images as any;
-          if (!Array.isArray(imgs)) continue;
-          for (const img of imgs) {
-            // PostImage = string | { src: string; video?: string }
-            if (typeof img !== "object" || !img || !img.src || !img.video) continue;
-            const srcUrl: string = img.src;
-            const videoUrl: string = img.video;
-            // 更新图片 Media 记录：设置 livePhotoVideo
-            try {
-              const imgMedia = await Media.findOne({ where: { url: srcUrl } });
-              if (imgMedia && !imgMedia.livePhotoVideo) {
-                await imgMedia.update({ livePhotoVideo: videoUrl });
-                pairsLinked++;
-              }
-            } catch { /* ignore */ }
-            // 更新视频 Media 记录：设置 livePhotoImage
-            try {
-              const vidMedia = await Media.findOne({ where: { url: videoUrl } });
-              if (vidMedia && !vidMedia.livePhotoImage) {
-                await vidMedia.update({ livePhotoImage: srcUrl });
-              }
-            } catch { /* ignore */ }
-          }
-        }
-      } catch (err) {
-        console.log("[media/import] 扫描实况图配对失败:", err);
-      }
-
-      res.json({
-        message: `导入完成：本地新增 ${imported} 个，又拍云新增 ${cloudImported} 个，跳过 ${skipped} 个已存在，失败 ${failed} 个，实况图配对 ${pairsLinked} 对`,
-        stats: { imported, cloudImported, skipped, failed, pairsLinked, totalScanned: scanned.length },
-      });
-    } catch (err: any) {
-      res.status(500).json({ message: err.message || "导入失败" });
-    }
   }
 );
 

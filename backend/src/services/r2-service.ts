@@ -6,7 +6,7 @@
  * 不共享），因此媒体文件不能再像传统部署那样写入本地 public/uploads
  * 目录，必须存到对象存储。
  *
- * 配置通过环境变量提供（而非像又拍云那样存在数据库 SiteSetting 里）：
+ * 配置通过环境变量提供，避免将对象存储密钥写入数据库：
  * 这是 Vercel 上管理密钥的推荐方式（Project Settings → Environment
  * Variables），避免把云存储密钥明文存进数据库。
  *
@@ -22,6 +22,7 @@
 import {
   S3Client,
   PutObjectCommand,
+  CopyObjectCommand,
   DeleteObjectCommand,
   HeadObjectCommand,
   GetObjectCommand,
@@ -166,14 +167,12 @@ export async function statR2Object(key: string): Promise<{ size: number; content
  * Serverless 函数（不受 Vercel ~4.5MB 请求体上限影响，视频/大图上传
  * 必须走这条路径）。
  */
-export async function createPresignedUpload(
-  originalName: string,
+export async function createPresignedUploadForKey(
+  key: string,
   mimeType: string,
-  prefix: string,
   expiresSeconds = 600
 ): Promise<{ uploadUrl: string; publicUrl: string; key: string }> {
   const { client, cfg } = getClient();
-  const key = buildObjectKey(prefix, originalName);
   const command = new PutObjectCommand({
     Bucket: cfg.bucket,
     Key: key,
@@ -181,6 +180,48 @@ export async function createPresignedUpload(
   });
   const uploadUrl = await getSignedUrl(client, command, { expiresIn: expiresSeconds });
   return { uploadUrl, publicUrl: publicUrlFor(cfg, key), key };
+}
+
+export async function createPresignedUpload(
+  originalName: string,
+  mimeType: string,
+  prefix: string,
+  expiresSeconds = 600
+): Promise<{ uploadUrl: string; publicUrl: string; key: string }> {
+  const key = buildObjectKey(prefix, originalName);
+  return createPresignedUploadForKey(key, mimeType, expiresSeconds);
+}
+
+export function buildStagingKey(intentId: string, originalName: string): string {
+  const ext = path.extname(originalName) || "";
+  return `staging/${intentId}/${uuidv4()}${ext}`;
+}
+
+/** 将用户上传的暂存对象提升为不可变的公开媒体对象。 */
+export async function promoteR2Object(
+  stagingKey: string,
+  finalKey: string,
+  mimeType: string
+): Promise<string> {
+  const { client, cfg } = getClient();
+  await client.send(
+    new CopyObjectCommand({
+      Bucket: cfg.bucket,
+      CopySource: `${cfg.bucket}/${encodeURIComponent(stagingKey).replace(/%2F/g, "/")}`,
+      Key: finalKey,
+      ContentType: mimeType,
+      MetadataDirective: "REPLACE",
+      CacheControl: "public, max-age=31536000, immutable",
+    })
+  );
+  await client.send(new DeleteObjectCommand({ Bucket: cfg.bucket, Key: stagingKey }));
+  return publicUrlFor(cfg, finalKey);
+}
+
+export function getR2PublicUrl(key: string): string {
+  const cfg = readR2Config();
+  if (!cfg) throw new Error("R2 存储未配置");
+  return publicUrlFor(cfg, key);
 }
 
 /** 从 R2 公开访问 URL 中提取对象 key（用于删除） */

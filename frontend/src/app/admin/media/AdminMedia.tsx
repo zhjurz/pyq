@@ -15,17 +15,16 @@ import {
   HardDrive,
   Loader2,
   Sparkles,
-  RefreshCw,
 } from "lucide-react";
-import { apiFetch, getApiUrl, getToken } from "@/lib/api-fetch";
-import { toAbsoluteUrl } from "@/lib/upload";
+import { apiFetch, getToken } from "@/lib/api-fetch";
+import { toAbsoluteUrl, uploadDirect } from "@/lib/upload";
 import { useExitAnimation } from "@/lib/use-exit-animation";
 
 interface MediaItem {
   id: string;
   filename: string;
   url: string;
-  storageType: "upyun" | "local";
+  storageType: "r2";
   mimeType: string;
   size: number;
   category: "image" | "video" | "audio" | "file";
@@ -89,8 +88,6 @@ export default function AdminMedia() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const [importMsg, setImportMsg] = useState<string | null>(null);
   const [selected, setSelected] = useState<MediaItem | null>(null);
   const [copied, setCopied] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -119,22 +116,22 @@ export default function AdminMedia() {
   const handleUpload = useCallback(async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     setUploading(true);
-    const API_URL = getApiUrl();
     const token = getToken();
+    if (!token) return;
     let successCount = 0;
     let failCount = 0;
 
     for (const file of Array.from(files)) {
       try {
-        const form = new FormData();
-        form.append("file", file);
-        const res = await fetch(`${API_URL}/media/upload`, {
-          method: "POST",
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-          body: form,
-        });
-        if (res.ok) successCount++;
-        else failCount++;
+        const kind = file.type.startsWith("image/")
+          ? "image"
+          : file.type.startsWith("video/")
+            ? "video"
+            : file.type.startsWith("audio/")
+              ? "audio"
+              : "file";
+        await uploadDirect(file, token, kind);
+        successCount++;
       } catch {
         failCount++;
       }
@@ -150,33 +147,6 @@ export default function AdminMedia() {
       } else {
         fetchMedia();
       }
-    }
-  }, [page, fetchMedia]);
-
-  const handleImport = useCallback(async () => {
-    if (!confirm("将扫描服务器 /uploads/ 目录并导入所有未登记的文件，同时建立实况图配对关系。继续？")) return;
-    setImporting(true);
-    setImportMsg(null);
-    try {
-      const res = await apiFetch("/media/import", { method: "POST" });
-      const data = await res.json();
-      if (res.ok) {
-        setImportMsg(data.message || "导入完成");
-        // 刷新列表
-        if (page !== 1) {
-          setPage(1);
-        } else {
-          fetchMedia();
-        }
-      } else {
-        setImportMsg(data.message || "导入失败");
-      }
-    } catch (err: any) {
-      setImportMsg(err.message || "导入失败");
-    } finally {
-      setImporting(false);
-      // 5 秒后清空提示
-      setTimeout(() => setImportMsg(null), 5000);
     }
   }, [page, fetchMedia]);
 
@@ -226,24 +196,6 @@ export default function AdminMedia() {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={handleImport}
-            disabled={importing}
-            className="flex items-center gap-2 rounded-lg border border-adm-border bg-adm-card px-3 py-2.5 text-sm font-medium text-adm-text-secondary transition-colors hover:bg-adm-hover disabled:opacity-50"
-            title="扫描服务器 /uploads/ 目录，导入历史文件并建立实况图配对"
-          >
-            {importing ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                导入中...
-              </>
-            ) : (
-              <>
-                <RefreshCw className="h-4 w-4" />
-                导入历史文件
-              </>
-            )}
-          </button>
-          <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
             className="flex items-center gap-2 rounded-lg bg-adm-primary px-4 py-2.5 text-sm font-medium text-adm-primary-text transition-colors hover:opacity-90 disabled:opacity-50"
@@ -269,13 +221,6 @@ export default function AdminMedia() {
           onChange={(e) => handleUpload(e.target.files)}
         />
       </div>
-
-      {/* 导入结果提示 */}
-      {importMsg && (
-        <div className="mb-4 rounded-lg border border-adm-border bg-adm-input/60 px-4 py-2.5 text-sm text-adm-text-secondary">
-          {importMsg}
-        </div>
-      )}
 
       {/* 类型筛选 */}
       <div className="mb-4 flex flex-wrap gap-2">
@@ -435,11 +380,8 @@ function MediaCard({ item, onClick }: { item: MediaItem; onClick: () => void }) 
 
       {/* 存储类型角标 */}
       <div className="absolute right-1 top-1 flex items-center gap-0.5 rounded-full bg-black/50 px-1.5 py-0.5 text-[10px] text-white backdrop-blur-sm">
-        {item.storageType === "upyun" ? (
-          <Cloud className="h-2.5 w-2.5" />
-        ) : (
-          <HardDrive className="h-2.5 w-2.5" />
-        )}
+        <Cloud className="h-2.5 w-2.5" />
+        R2
       </div>
 
     </button>
@@ -569,11 +511,7 @@ function MediaDetailModal({
             <div className="flex justify-between">
               <span className="text-adm-text-tertiary">存储位置</span>
               <span className="flex items-center gap-1 text-adm-text-secondary">
-                {item.storageType === "upyun" ? (
-                  <><Cloud className="h-3 w-3" /> 又拍云</>
-                ) : (
-                  <><HardDrive className="h-3 w-3" /> 本地</>
-                )}
+                <Cloud className="h-3 w-3" /> Cloudflare R2
               </span>
             </div>
             <div className="flex justify-between">

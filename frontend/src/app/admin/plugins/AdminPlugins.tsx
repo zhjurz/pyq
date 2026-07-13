@@ -613,7 +613,7 @@ export default function AdminPlugins() {
           </p>
         </div>
 
-        {/* 自动播放开关 — 与又拍云/邮件配置开关保持统一样式 */}
+        {/* 自动播放开关 — 与邮件配置开关保持统一样式 */}
         <div
           className="mb-5 flex cursor-pointer items-center justify-between rounded-lg border border-adm-border bg-adm-input px-4 py-3"
           onClick={() => setSettings({ ...settings, musicAutoplay: !settings.musicAutoplay })}

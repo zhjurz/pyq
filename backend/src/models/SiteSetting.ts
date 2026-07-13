@@ -27,12 +27,6 @@ interface SiteSettingAttributes {
   smtpPass: string;
   smtpFrom: string;
   emailTemplate: string;
-  upyunEnabled: boolean;
-  upyunBucket: string;
-  upyunOperator: string;
-  upyunPassword: string;
-  upyunDomain: string;
-  upyunPath: string;
   amapJsKey: string;
   amapSecurityJsCode: string;
   amapKey: string;
@@ -57,7 +51,7 @@ interface SiteSettingAttributes {
 
 interface SiteSettingCreationAttributes extends Optional<
   SiteSettingAttributes,
-  "id" | "siteName" | "description" | "keywords" | "domain" | "beian" | "faviconUrl" | "ogImage" | "musicUrl" | "musicId" | "musicSource" | "playlistId" | "backgroundImages" | "darkModeEnabled" | "darkModeStartTime" | "darkModeEndTime" | "emailNotifyEnabled" | "notifyEmail" | "smtpHost" | "smtpPort" | "smtpSecure" | "smtpUser" | "smtpPass" | "smtpFrom" | "emailTemplate" | "upyunEnabled" | "upyunBucket" | "upyunOperator" | "upyunPassword" | "upyunDomain" | "upyunPath" | "amapJsKey" | "amapSecurityJsCode" | "amapKey" | "beianUrl" | "socialLinks" | "postCollapseLength" | "fontUrl" | "adOnArchives" | "commentAntiSpamEnabled" | "rssEnabled" | "rssIncludeMoments" | "doubanId" | "bannedWords" | "musicAutoplay"
+  "id" | "siteName" | "description" | "keywords" | "domain" | "beian" | "faviconUrl" | "ogImage" | "musicUrl" | "musicId" | "musicSource" | "playlistId" | "backgroundImages" | "darkModeEnabled" | "darkModeStartTime" | "darkModeEndTime" | "emailNotifyEnabled" | "notifyEmail" | "smtpHost" | "smtpPort" | "smtpSecure" | "smtpUser" | "smtpPass" | "smtpFrom" | "emailTemplate" | "amapJsKey" | "amapSecurityJsCode" | "amapKey" | "beianUrl" | "socialLinks" | "postCollapseLength" | "fontUrl" | "adOnArchives" | "commentAntiSpamEnabled" | "rssEnabled" | "rssIncludeMoments" | "doubanId" | "bannedWords" | "musicAutoplay"
 > {}
 
 class SiteSetting
@@ -89,12 +83,6 @@ class SiteSetting
   declare smtpPass: string;
   declare smtpFrom: string;
   declare emailTemplate: string;
-  declare upyunEnabled: boolean;
-  declare upyunBucket: string;
-  declare upyunOperator: string;
-  declare upyunPassword: string;
-  declare upyunDomain: string;
-  declare upyunPath: string;
   declare amapJsKey: string;
   declare amapSecurityJsCode: string;
   declare amapKey: string;
@@ -238,36 +226,6 @@ SiteSetting.init(
     emailTemplate: {
       type: DataTypes.TEXT,
       allowNull: false,
-    },
-    upyunEnabled: {
-      type: DataTypes.BOOLEAN,
-      allowNull: false,
-      defaultValue: false,
-    },
-    upyunBucket: {
-      type: DataTypes.STRING(100),
-      allowNull: false,
-      defaultValue: "",
-    },
-    upyunOperator: {
-      type: DataTypes.STRING(100),
-      allowNull: false,
-      defaultValue: "",
-    },
-    upyunPassword: {
-      type: DataTypes.STRING(255),
-      allowNull: false,
-      defaultValue: "",
-    },
-    upyunDomain: {
-      type: DataTypes.STRING(255),
-      allowNull: false,
-      defaultValue: "",
-    },
-    upyunPath: {
-      type: DataTypes.STRING(255),
-      allowNull: false,
-      defaultValue: "",
     },
     amapJsKey: {
       type: DataTypes.STRING(255),

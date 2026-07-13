@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
-const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:4000";
+const BACKEND_URL = (process.env.BACKEND_URL || "http://localhost:4000").replace(/\/+$/, "");
+const MEDIA_HOST = process.env.NEXT_PUBLIC_MEDIA_ORIGIN
+  ? new URL(process.env.NEXT_PUBLIC_MEDIA_ORIGIN).hostname
+  : null;
 
 const nextConfig: NextConfig = {
   output: "standalone",
@@ -36,6 +39,7 @@ const nextConfig: NextConfig = {
         hostname: "localhost",
         port: "4000",
       },
+      ...(MEDIA_HOST ? [{ protocol: "https" as const, hostname: MEDIA_HOST }] : []),
     ],
   },
   async redirects() {

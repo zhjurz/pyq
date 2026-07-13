@@ -24,10 +24,10 @@ import { ensureReady } from "./bootstrap";
 
 dotenv.config();
 
-/** 允许的前端源：支持逗号分隔的多个域名（如生产域名 + Vercel 预览域名） */
+/** 允许直接访问 API 的前端源，支持逗号分隔。正常浏览器请求应通过前端 /api rewrite。 */
 function buildCorsOrigin() {
   if (process.env.NODE_ENV !== "production") return true;
-  const raw = process.env.CLIENT_URL || "http://localhost:3000";
+  const raw = process.env.CORS_ALLOWED_ORIGINS || process.env.CLIENT_URL || "http://localhost:3000";
   const list = raw
     .split(",")
     .map((s) => s.trim())
@@ -49,11 +49,10 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(visitorCookieMiddleware);
 
-// 本地磁盘静态资源（仅传统部署 / 本地开发有效）。
-// 在 Vercel Serverless 上文件系统只读且不持久，该目录通常为空——
-// 媒体文件已改为直接存储在 Cloudflare R2 / 又拍云并返回绝对 CDN URL，
-// 不再依赖此路径提供访问。保留仅为兼容旧数据 / 非 Serverless 部署。
-app.use("/uploads", express.static(path.join(__dirname, "../public/uploads")));
+// 旧本地上传目录仅供非生产开发兼容；生产 R2-only 部署不会写入该目录。
+if (!process.env.VERCEL) {
+  app.use("/uploads", express.static(path.join(__dirname, "../public/uploads")));
+}
 
 // 在处理业务路由前确保数据库已连接、表已同步、插件已加载。
 // 传统部署下 bootstrap 已在进程启动时执行过一次，这里的 ensureReady()

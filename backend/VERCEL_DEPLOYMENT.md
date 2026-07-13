@@ -9,7 +9,7 @@
 | 进程模型 | `app.listen()` 长驻进程 | 拆分为 `src/app.ts`（路由/中间件，两种部署共用）+ `src/index.ts`（传统长驻入口）+ `api/index.ts`（Vercel 函数入口） |
 | 数据库连接/表同步 | 启动时执行一次 | 封装进 `src/bootstrap.ts` 的 `ensureReady()`，惰性 + 按函数实例缓存，冷启动时执行一次，同实例后续请求直接复用 |
 | 数据库连接池 | 固定较大连接池 | 按 `VERCEL` 环境变量自动区分：Serverless 下用小连接池（默认 `max=2`）+ 短空闲回收，避免多实例并发打满 MySQL 连接数上限；可用 `DB_POOL_MAX` / `DB_POOL_IDLE` 覆盖 |
-| 媒体文件存储 | 又拍云 或 本地磁盘 `public/uploads/` | 新增 **Cloudflare R2**（S3 兼容 API，通过环境变量配置）作为首选存储；又拍云保留兼容；本地磁盘回退仅限非 Serverless 部署，Serverless 下配置不全会直接报错而不是静默写坏文件 |
+| 媒体文件存储 | 本地磁盘 `public/uploads/` | **Cloudflare R2**（S3 兼容 API，通过环境变量配置）是唯一支持的持久存储；Serverless 下未配置 R2 会明确报错 |
 | 大文件上传 | multipart 直传后端，最大 100MB | 新增预签名直传接口（`/api/upload/presign` + `/api/upload/confirm`，`/api/media` 同理），浏览器直接 PUT 到 R2，绕开 Vercel 函数请求体上限（见下方"已知限制"） |
 | 豆瓣图片代理缓存 | 写本地磁盘 `public/uploads/douban-cache/` | 改为 HTTP `Cache-Control`（`public, s-maxage=86400`），交给浏览器 / Vercel 边缘 CDN 缓存 |
 | 音源插件（MusicFree）存储 | `backend/plugins/*.js` 本地文件 + `fs.watch` 热重载 | 迁移到数据库 `music_sources` 表的 `code` 字段；内存缓存 + 60 秒 TTL 对账（`ensurePluginsFresh`），替代 `fs.watch` |
@@ -108,7 +108,7 @@ DB_HOST=... DB_USER=... DB_PASSWORD=... DB_NAME=... npm run db:seed
 
 3. **插件（音源）安装/删除后，跨函数实例的可见延迟最长约 60 秒**（`music-sources/mf-manager.ts` 的 `SYNC_TTL_MS`）。发起安装/删除请求的那次调用本身立即生效；但其它已经在运行的"热"函数实例要等到自己的 60 秒 TTL 到期重新对账数据库才会感知到变化。可以按需调小该常量换取更低延迟（代价是更频繁的数据库查询）。
 
-4. **"迁移本地文件到又拍云"（`/api/upload/migrate-to-upyun`）和"扫描本地文件导入媒体库"（`/api/media/import`）这两个管理员工具只对传统 VPS/Docker 部署有意义**——它们扫描的是本地磁盘 `public/uploads/` 目录。Vercel Serverless 部署下没有这个目录（本来也不会有本地文件需要迁移），调用会直接返回空结果，不会报错。
+4. **历史本地文件迁移需要在切换到 Vercel 前离线完成**。Vercel Serverless 没有持久本地磁盘；请通过受控的离线迁移工具将旧 `/uploads/` 或其他旧存储 URL 复制到 R2、验证对象后更新数据库引用。应用运行时不提供旧存储迁移接口。
 
 5. **冷启动延迟**：长时间没有请求时，Vercel 会回收空闲的函数实例；下一次请求需要重新建立数据库连接、同步表结构、加载插件，会比热请求慢。这是 Serverless 架构的正常特性，可以通过 Vercel 的付费计划开启的一些保活/预热机制缓解，本次改造未做特殊处理。
 

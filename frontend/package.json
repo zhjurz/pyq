@@ -27,6 +27,7 @@
     "@tiptap/react": "^3.27.3",
     "@tiptap/starter-kit": "^3.27.3",
     "@tiptap/suggestion": "^3.27.3",
+    "backend": "file:../backend",
     "blueimp-md5": "^2.19.0",
     "echarts": "^6.1.0",
     "echarts-for-react": "^3.0.6",
