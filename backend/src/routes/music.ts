@@ -8,6 +8,7 @@ import { Router, Request, Response } from "express";
 import http from "http";
 import https from "https";
 import { SiteSetting } from "../models";
+import { siteSettingTextDefaults } from "../models/SiteSetting";
 import { authenticate, AuthRequest } from "../middleware/auth";
 import { getSource, listSources, normalizePlatform } from "../music-sources";
 import { ensurePluginsFresh } from "../music-sources/mf-manager";
@@ -61,7 +62,7 @@ export function parseLyric(lrc: string): { timeMs: number; text: string }[] | nu
 async function ensureSetting() {
   const [setting] = await SiteSetting.findOrCreate({
     where: { id: 1 },
-    defaults: { id: 1 },
+    defaults: { id: 1, ...siteSettingTextDefaults },
   });
   return setting;
 }

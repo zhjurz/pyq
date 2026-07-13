@@ -179,7 +179,6 @@ SiteSetting.init(
     backgroundImages: {
       type: DataTypes.TEXT,
       allowNull: false,
-      defaultValue: "[]",
     },
     darkModeEnabled: {
       type: DataTypes.BOOLEAN,
@@ -239,7 +238,6 @@ SiteSetting.init(
     emailTemplate: {
       type: DataTypes.TEXT,
       allowNull: false,
-      defaultValue: "",
     },
     upyunEnabled: {
       type: DataTypes.BOOLEAN,
@@ -294,7 +292,6 @@ SiteSetting.init(
     socialLinks: {
       type: DataTypes.TEXT,
       allowNull: false,
-      defaultValue: "[]",
       field: "socialLinks",
     },
     postCollapseLength: {
@@ -348,5 +345,11 @@ SiteSetting.init(
     tableName: "site_settings",
   }
 );
+
+export const siteSettingTextDefaults = {
+  backgroundImages: "[]",
+  emailTemplate: "",
+  socialLinks: "[]",
+} satisfies Pick<SiteSettingCreationAttributes, "backgroundImages" | "emailTemplate" | "socialLinks">;
 
 export default SiteSetting;

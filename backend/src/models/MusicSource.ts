@@ -105,7 +105,6 @@ MusicSource.init(
     userVariables: {
       type: DataTypes.TEXT,
       allowNull: false,
-      defaultValue: "{}",
     },
     filePath: {
       type: DataTypes.STRING(500),
@@ -116,7 +115,6 @@ MusicSource.init(
       // LONGTEXT：插件代码体积可能达到数百 KB，普通 TEXT（64KB 上限）可能不够
       type: DataTypes.TEXT("long"),
       allowNull: false,
-      defaultValue: "",
     },
     codeHash: {
       type: DataTypes.STRING(64),
@@ -141,7 +139,6 @@ MusicSource.init(
     description: {
       type: DataTypes.TEXT,
       allowNull: false,
-      defaultValue: "",
     },
     primaryKey: {
       type: DataTypes.STRING(500),
@@ -151,7 +148,6 @@ MusicSource.init(
     hints: {
       type: DataTypes.TEXT,
       allowNull: false,
-      defaultValue: "{}",
     },
     cacheControl: {
       type: DataTypes.STRING(20),
@@ -161,7 +157,6 @@ MusicSource.init(
     userVariableDefinitions: {
       type: DataTypes.TEXT,
       allowNull: false,
-      defaultValue: "[]",
     },
     defaultSearchType: {
       type: DataTypes.STRING(50),

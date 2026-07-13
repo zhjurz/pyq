@@ -99,7 +99,7 @@ interface PostAttributes {
   status: "published" | "draft";
 }
 
-interface PostCreationAttributes extends Optional<PostAttributes, "id" | "shortId" | "type" | "title" | "excerpt" | "cover" | "category" | "images" | "pinned" | "isAd" | "adAvatar" | "adNickname" | "likesDisabled" | "commentsDisabled" | "ip" | "region" | "articleType" | "repostUrl" | "viewCount" | "status"> {}
+interface PostCreationAttributes extends Optional<PostAttributes, "id" | "shortId" | "type" | "title" | "excerpt" | "cover" | "category" | "pinned" | "isAd" | "adAvatar" | "adNickname" | "likesDisabled" | "commentsDisabled" | "ip" | "region" | "articleType" | "repostUrl" | "viewCount" | "status"> {}
 
 class Post
   extends Model<PostAttributes, PostCreationAttributes>
@@ -187,12 +187,10 @@ Post.init(
     content: {
       type: DataTypes.TEXT,
       allowNull: false,
-      defaultValue: "",
     },
     images: {
       type: DataTypes.JSON,
       allowNull: false,
-      defaultValue: [],
     },
     location: {
       type: DataTypes.JSON,

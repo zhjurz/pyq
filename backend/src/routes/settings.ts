@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { body, validationResult } from "express-validator";
 import { SiteSetting, User } from "../models";
+import { siteSettingTextDefaults } from "../models/SiteSetting";
 import { authenticate, requireAdmin, AuthRequest } from "../middleware/auth";
 import { sendTestEmail } from "../services/email-service";
 
@@ -10,7 +11,7 @@ const router = Router();
 async function ensureSetting() {
   const [setting, created] = await SiteSetting.findOrCreate({
     where: { id: 1 },
-    defaults: { id: 1 },
+    defaults: { id: 1, ...siteSettingTextDefaults },
   });
   return setting;
 }

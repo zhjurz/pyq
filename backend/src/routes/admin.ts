@@ -5,6 +5,7 @@ import sequelize from "../config/database";
 import { User, Post, Comment, Like, SiteSetting } from "../models";
 import { authenticate, requireAdmin, AuthRequest } from "../middleware/auth";
 import { blacklistService } from "../services/blacklist-service";
+import { siteSettingTextDefaults } from "../models/SiteSetting";
 
 const router = Router();
 
@@ -444,7 +445,10 @@ router.put(
       .map((w) => String(w).trim())
       .filter((w) => w.length > 0 && w.length <= 100)
       .slice(0, 500);
-    const [setting] = await SiteSetting.findOrCreate({ where: { id: 1 }, defaults: { id: 1 } });
+    const [setting] = await SiteSetting.findOrCreate({
+      where: { id: 1 },
+      defaults: { id: 1, ...siteSettingTextDefaults },
+    });
     await setting.update({ bannedWords: JSON.stringify(words) });
     res.json({ words });
   }
