@@ -30,7 +30,9 @@ export default function AdminLayoutClient({
   const fetchSettings = useSiteSettings((s) => s.fetchSettings);
   const activePostMusic = useMusicPlayer((s) => s.activePostMusic);
   const bgMusic = useMusicPlayer((s) => s.bgMusic);
-  const hasMusic = !!(activePostMusic || bgMusic);
+  const playlist = useMusicPlayer((s) => s.playlist);
+  const musicUrl = useMusicPlayer((s) => s.musicUrl);
+  const hasMusic = !!(activePostMusic || bgMusic || musicUrl || playlist.length);
 
   useEffect(() => {
     const token = localStorage.getItem("admin_token");

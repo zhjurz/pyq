@@ -153,6 +153,14 @@ export default function MusicPanel({
       });
       if (res.ok) {
         const data = await res.json();
+        if (!data.playable || !data.mp3url) {
+          setError(
+            data.reason === "headers-required"
+              ? "该音源需要防盗链请求头，当前 Vercel 浏览器直连模式无法播放；请选择其他音源或上传音频。"
+              : "该歌曲暂时无法获取可直连的播放地址。"
+          );
+          return;
+        }
         const finalExtra =
           Object.keys(extra).length > 0 ? extra : (data.extra || undefined);
         onConfirm({

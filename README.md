@@ -219,6 +219,13 @@ CLIENT_URL=http://localhost:3000
 
 # 按需重验证密钥（须与前端一致，生产使用随机长字符串）
 REVALIDATE_SECRET=请改为随机长字符串
+
+# Cloudflare R2（唯一持久媒体存储；必须使用绑定的公开媒体域名）
+R2_ACCOUNT_ID=<Cloudflare Account ID>
+R2_ACCESS_KEY_ID=<Object Read & Write Access Key>
+R2_SECRET_ACCESS_KEY=<Object Read & Write Secret Key>
+R2_BUCKET=<Bucket 名称>
+R2_PUBLIC_URL=https://media.你的域名.com
 ```
 
 构建并初始化数据库：
@@ -415,6 +422,11 @@ pm2 restart kanle-frontend
 | `ADMIN_USERNAME` | 否 | `admin` | 管理员用户名 |
 | `CLIENT_URL` | 否 | `http://localhost:3000` | 前端地址（CORS + revalidate 回调） |
 | `REVALIDATE_SECRET` | 否 | `kanle-revalidate` | 按需重验证密钥（须与前端一致） |
+| `R2_ACCOUNT_ID` | 是 | - | Cloudflare Account ID |
+| `R2_ACCESS_KEY_ID` | 是 | - | 具备目标 Bucket Object Read & Write 权限的 Access Key |
+| `R2_SECRET_ACCESS_KEY` | 是 | - | 对应的 Secret Key |
+| `R2_BUCKET` | 是 | - | R2 Bucket 名称 |
+| `R2_PUBLIC_URL` | 是 | - | 已绑定的公开 R2 自定义域名，例如 `https://media.example.com` |
 
 ### 前端（`frontend/.env.local`）
 
@@ -425,6 +437,7 @@ pm2 restart kanle-frontend
 | `NEXT_PUBLIC_SITE_URL` | 否 | 站点 URL（用于 Cravatar 默认头像，不设则回退 wavatar） |
 | `NEXT_PUBLIC_TWIKOO_ENV_ID` | 否 | Twikoo 评论系统环境 ID |
 | `REVALIDATE_SECRET` | 否 | 须与后端一致 |
+| `NEXT_PUBLIC_MEDIA_ORIGIN` | 是 | 稳定的公开 R2 媒体域名；构建时用于 Next Image 白名单 |
 
 > `NEXT_PUBLIC_API_URL=/api` 是相对路径，换域名后**不需要重新构建**。
 
@@ -477,8 +490,10 @@ node dist/scripts/reset-password.js
 <details>
 <summary>上传的图片显示不出来？</summary>
 
-- 确认后端已配置完整 R2 环境变量并在 R2 Bucket 为前端域名允许 `PUT`/`GET`/`HEAD` 与 `Content-Type` CORS
-- 确认 `R2_PUBLIC_URL` 的域名已配置为前端 `NEXT_PUBLIC_MEDIA_ORIGIN`
+- 确认后端已配置完整 R2 环境变量；前端构建时设置了相同公开媒体域名的 `NEXT_PUBLIC_MEDIA_ORIGIN`
+- 在 Cloudflare Dashboard → R2 → Bucket → Settings → CORS Policy 中，为**当前前端完整域名**配置 `PUT`、`GET`、`HEAD` 和 `Content-Type`。后端 `CLIENT_URL` 不是 R2 Bucket CORS。
+- R2 直传流程为 `media/presign → 浏览器 PUT → media/confirm`：浏览器开发者工具中先看失败阶段。PUT 网络错误通常是 Bucket CORS；PUT 403 通常是 R2 凭据/签名/Content-Type；confirm 失败通常是对象 MIME、大小或复制权限不匹配。
+- 完整 JSON CORS 示例和 Vercel 变量说明见 [`backend/VERCEL_DEPLOYMENT.md`](backend/VERCEL_DEPLOYMENT.md)。
 - 确认该媒体域名已在 `frontend/next.config.ts` 的远程图片白名单中生效
 </details>
 

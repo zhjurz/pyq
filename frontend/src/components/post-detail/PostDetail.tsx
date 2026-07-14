@@ -255,8 +255,9 @@ export default function PostDetail({ post }: PostDetailProps) {
       });
       audio.src = playUrl;
       await audio.play();
-    } catch {
-      useMusicPlayer.getState().setAudioError(true);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "无法获取可直连的播放地址。";
+      useMusicPlayer.getState().setAudioError(true, message);
     }
   };
 

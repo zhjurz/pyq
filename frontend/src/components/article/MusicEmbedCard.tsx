@@ -63,7 +63,7 @@ export default function MusicEmbedCard({ music, postId }: MusicEmbedCardProps) {
   const handlePlayError = useCallback((err: unknown, context: string) => {
     console.error(`[MusicEmbedCard] ${context}:`, err, "music:", music);
     const st = useMusicPlayer.getState();
-    st.setAudioError(true);
+    st.setAudioError(true, err instanceof Error ? err.message : "无法获取可直连的播放地址。");
     st.setSwitching(false);
     st.setLoading(false);
   }, [music]);

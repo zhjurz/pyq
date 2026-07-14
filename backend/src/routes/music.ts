@@ -83,7 +83,7 @@ function isSafeUrl(url: string): boolean {
  * 其余 query 参数全部视为音源特定字段（songmid/hash/bvid/cid ...），
  * 透传给音源 getStreamUrl/getLyric/getInfo。
  */
-const RESERVED_QUERY = new Set(["platform", "id", "quality", "url"]);
+const RESERVED_QUERY = new Set(["platform", "id", "quality", "url", "refresh"]);
 
 /**
  * 从请求 query 构造 MusicItem，透传所有音源特定字段。
@@ -150,6 +150,20 @@ function toStreamUrl(
     }
   }
   return `/api/music/stream?${params.toString()}`;
+}
+
+function serializePlaylistTrack(track: MusicItem, platform: string) {
+  return {
+    id: String(track.id || ""),
+    name: track.title || "音乐",
+    artist: track.artist || "",
+    cover: track.artwork || "",
+    // 歌单接口只返回描述信息；实际播放在用户选中该曲目时通过 /resolve 按需解析。
+    mp3url: "",
+    lyric: track.rawLrc || track.lrc || "",
+    platform,
+    extra: extractExtraFields(track),
+  };
 }
 
 interface DirectResolution {
@@ -460,40 +474,18 @@ router.get("/", async (_req: Request, res: Response) => {
         const tracks = await source.importPlaylist(setting.playlistId);
         if (tracks && tracks.length > 0) {
           const first = tracks[0];
-          const playlist = await Promise.all(tracks.map(async (t) => {
-            const extra = extractExtraFields(t);
-            const item: MusicItem = { ...t, id: String(t.id || ""), platform: source.code };
-            const resolution = await resolveDirectMedia(source, item, "standard");
-            return {
-              id: String(t.id || ""),
-              name: t.title || "音乐",
-              artist: t.artist || "",
-              cover: t.artwork || "",
-              mp3url: resolution.url || "",
-              playable: resolution.playable,
-              reason: resolution.reason,
-              lyric: t.rawLrc || t.lrc || "",
-              platform: source.code,
-              extra,
-            };
-          }));
-          const firstExtra = extractExtraFields(first);
-          const firstResolution = await resolveDirectMedia(
-            source,
-            { ...first, id: String(first.id || ""), platform: source.code },
-            "standard"
-          );
+          const playlist = tracks.map((track) => serializePlaylistTrack(track, source.code));
           res.json({
             name: first.title || "音乐",
-            mp3url: firstResolution.url || "",
-            playable: firstResolution.playable,
-            reason: firstResolution.reason,
+            // 直连 URL 具有时效且部分音源需要浏览器无法附加的请求头，
+            // 因而歌单仅返回元数据，前端在用户选歌时调用 /resolve。
+            mp3url: "",
             cover: first.artwork || "",
             author: first.artist || "",
             lyric: first.rawLrc || first.lrc || "",
             id: String(first.id),
             platform: source.code,
-            extra: firstExtra,
+            extra: extractExtraFields(first),
             playlist,
             currentIndex: 0,
           });
@@ -509,13 +501,12 @@ router.get("/", async (_req: Request, res: Response) => {
     if (setting.musicId) {
       try {
         const musicItem: MusicItem = { id: setting.musicId, platform: source.code };
-        const [, info, lyricResult] = await Promise.all([
+        const [resolution, info, lyricResult] = await Promise.all([
           resolveDirectMedia(source, musicItem, "standard"),
           source.getInfo(musicItem).catch(() => ({})),
           source.getLyric(musicItem).catch(() => ({ rawLrc: "" })),
         ]);
 
-        const resolution = await resolveDirectMedia(source, musicItem, "standard");
         if (resolution.playable && resolution.url) {
           res.json({
             name: (info as any)?.title || "",
@@ -642,24 +633,7 @@ router.get("/playlist", authenticate, async (req: AuthRequest, res: Response) =>
     }
 
     const tracks = await source.importPlaylist(id);
-    const data = await Promise.all((tracks || []).map(async (t) => {
-      const extra = extractExtraFields(t);
-      const item: MusicItem = { ...t, id: String(t.id || ""), platform: source.code };
-      const resolution = await resolveDirectMedia(source, item, "standard");
-      return {
-        id: String(t.id || ""),
-        name: t.title || "音乐",
-        artist: t.artist || "",
-        cover: t.artwork || "",
-        mp3url: resolution.url || "",
-        playable: resolution.playable,
-        reason: resolution.reason,
-        lyric: t.rawLrc || t.lrc || "",
-        platform: source.code,
-        extra,
-      };
-    }));
-    res.json({ tracks: data });
+    res.json({ tracks: (tracks || []).map((track) => serializePlaylistTrack(track, source.code)) });
   } catch (err) {
     console.error("[music] playlist error:", err);
     res.status(500).json({ message: "获取歌单失败" });

@@ -2,55 +2,92 @@ import { create } from "zustand";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
 
-/**
- * 动态音乐的可播放 URL。
- * - MusicFree 插件源（QQ音乐等）：直链带时间戳会过期，改用 /api/music/stream
- *   代理端点，每次播放由后端实时调插件 getMediaSource 拿新 URL。
- * - 上传 / 旧数据：用存储的 url（上传不过期，旧 netease 直链由后端代理处理）。
- *
- * extra 字段展开成顶级 query 参数（值转字符串），
- * 避免 JSON 数字类型（如 albumid:36062）导致插件返回试听片段而非完整音频。
- */
-export async function resolvePostMusicUrl(music: {
+export type MusicResolutionReason = "headers-required" | "no-url" | "unsafe-url" | "request-failed";
+
+export class MusicResolutionError extends Error {
+  constructor(public readonly reason: MusicResolutionReason) {
+    super(
+      reason === "headers-required"
+        ? "该音源需要 Referer、Cookie 或 User-Agent 等防盗链请求头，浏览器直连播放无法安全附加这些请求头；请切换音源或上传音频。"
+        : "无法获取可直连的播放地址，可能受版权或音源限制。"
+    );
+    this.name = "MusicResolutionError";
+  }
+}
+
+export interface SourceMusicIdentity {
   url?: string;
+  mp3url?: string;
   source?: string;
   platform?: string;
+  id?: string;
   musicId?: string;
+  neteaseId?: string;
   songmid?: string;
-  extra?: Record<string, any>;
-}, refresh = false): Promise<string> {
-  if (music.source === "musicfree" && music.platform && music.musicId) {
+  extra?: Record<string, unknown>;
+}
+
+function appendExtra(params: URLSearchParams, extra?: Record<string, unknown>) {
+  if (!extra) return;
+  for (const [key, value] of Object.entries(extra)) {
+    if (value == null || value === "") continue;
+    const valueType = typeof value;
+    if (valueType === "string" || valueType === "number" || valueType === "boolean") {
+      params.set(key, String(value));
+    }
+  }
+}
+
+/**
+ * Resolve one MusicFree item only when it is about to play. Direct URLs are short-lived,
+ * and browser <audio> elements cannot attach an upstream source's anti-hotlink headers.
+ */
+export async function resolveMusicUrl(music: SourceMusicIdentity, refresh = false): Promise<string> {
+  const id = music.musicId || music.id || music.neteaseId;
+  const platform = music.platform || (music.source === "netease" ? "wy" : "");
+  if (platform && id && (music.source === "musicfree" || music.source === "netease" || !music.url && !music.mp3url)) {
     const params = new URLSearchParams({
-      platform: music.platform,
-      id: String(music.musicId),
+      platform,
+      id: String(id),
       quality: "standard",
     });
     if (refresh) params.set("refresh", "1");
-    const extra: Record<string, any> = { ...(music.extra || {}) };
+    const extra = { ...(music.extra || {}) };
     if (music.songmid && !extra.songmid) extra.songmid = music.songmid;
-    for (const [k, v] of Object.entries(extra)) {
-      if (v != null && v !== "") params.set(k, String(v));
+    appendExtra(params, extra);
+
+    let response: Response;
+    try {
+      response = await fetch(`${API_URL}/music/resolve?${params.toString()}`);
+    } catch {
+      throw new MusicResolutionError("request-failed");
     }
-    const response = await fetch(`${API_URL}/music/resolve?${params.toString()}`);
     const data = await response.json().catch(() => null);
     if (!response.ok || !data?.playable || !data?.url) {
-      const reason = data?.reason === "headers-required"
-        ? "该音源需要防盗链请求头，无法在直连模式播放"
-        : "无法获取可直连的播放地址";
-      throw new Error(reason);
+      throw new MusicResolutionError(
+        data?.reason === "headers-required" || data?.reason === "unsafe-url" || data?.reason === "no-url"
+          ? data.reason
+          : "request-failed"
+      );
     }
     return data.url;
   }
-  const rawUrl = music.url || "";
+
+  const rawUrl = music.url || music.mp3url || "";
   if (!rawUrl) return "";
   if (rawUrl.startsWith("http")) return rawUrl;
-  return `${API_URL.replace("/api", "")}${rawUrl}`;
+  return `${API_URL.replace(/\/api$/, "")}${rawUrl}`;
+}
+
+/** 保留旧导出名，供动态/文章音乐卡片复用。 */
+export async function resolvePostMusicUrl(music: SourceMusicIdentity, refresh = false): Promise<string> {
+  return resolveMusicUrl(music, refresh);
 }
 
 /** 动态音乐信息——点击动态音乐卡片后，由顶栏播放器接管播放 */
 export interface PostMusicInfo {
   postId: string;
-  /** 可直接用于 <audio> src 的 URL（已处理网易云代理） */
+  /** 可直接用于 <audio> src 的 URL（上传音乐或按需解析后的直链） */
   url: string;
   name: string;
   artist: string;
@@ -63,16 +100,13 @@ export interface PostMusicInfo {
   musicId?: string;
   /** @deprecated 已并入 extra，保留以兼容旧数据 */
   songmid?: string;
-  /**
-   * 插件特定字段对象（songmid/hash/bvid 等），透传给后端 /api/music/lyric。
-   * 对齐洛水 IMusicItem 全字段方案。
-   */
+  /** 插件特定字段对象（songmid/hash/bvid 等），透传给后端 /api/music/lyric。 */
   extra?: Record<string, any>;
   /** LRC 歌词文本（上传歌曲透传，顶栏直接解析） */
   lrc?: string;
 }
 
-/** 歌单曲目类型 */
+/** 歌单曲目类型。mp3url 为空代表仍需在播放时按需解析。 */
 export interface PlaylistTrack {
   id: string;
   name: string;
@@ -91,60 +125,36 @@ export interface LyricLine {
   text: string;
 }
 
+let trackRequestId = 0;
+
 interface MusicPlayerState {
-  /** 当前接管顶栏的动态 ID；同一时间只有一个 */
   activePostId: string | null;
-  /** 当前接管的动态音乐详情；为 null 时顶栏回到歌单模式 */
   activePostMusic: PostMusicInfo | null;
-  /** 背景音乐当前曲目（歌单模式）；activePostMusic 为 null 时使用 */
   bgMusic: PostMusicInfo | null;
-  /** 全局播放状态（由顶栏 audio 事件驱动） */
   isPlaying: boolean;
-  /** 音频加载中（loadstart→true, canplay/play/error→false） */
   isLoading: boolean;
-  /** 当前歌词文本（由 audio timeupdate 驱动） */
   currentLyric: string;
 
-  // ===== 新增：歌单与播放状态 =====
-  /** 歌单列表 */
   playlist: PlaylistTrack[];
-  /** 当前播放索引 */
   currentIndex: number;
-  /** 当前音乐 URL（已 toAbsolute 处理） */
   musicUrl: string;
-  /** 当前音乐名称 */
   musicName: string;
-  /** 当前音乐 ID */
   musicId: string;
-  /** 解析后的歌词数组 */
   lyric: LyricLine[] | null;
-  /** 当前歌词行索引 */
   currentLyricIndex: number;
-  /** 是否显示歌词面板 */
   showLyricPanel: boolean;
-  /** 静音状态 */
   muted: boolean;
-  /** 音频错误 */
   audioError: boolean;
-  /** 音乐数据是否已从 API 加载完成 */
+  audioErrorMessage: string;
   musicLoaded: boolean;
-  /** 切歌过渡中 */
   switching: boolean;
 
-  // ===== Actions =====
-  /** 切换为指定动态的音乐（顶栏接管，停止歌单） */
   setActive: (postId: string, music: PostMusicInfo) => void;
-  /** 关闭动态接管，顶栏回到歌单模式 */
   clear: () => void;
-  /** 设置背景音乐曲目（歌单模式） */
   setBgMusic: (music: PostMusicInfo | null) => void;
-  /** 更新播放状态（供顶栏 audio 事件调用） */
   setPlaying: (playing: boolean) => void;
-  /** 更新加载状态（供顶栏 audio 事件调用） */
   setLoading: (loading: boolean) => void;
-  /** 更新当前歌词（供 audio timeupdate 调用） */
   setCurrentLyric: (lyric: string) => void;
-  /** 从 API 响应初始化音乐数据（只执行一次，由 musicLoaded 守卫） */
   initMusic: (data: {
     mp3url: string;
     name: string;
@@ -153,19 +163,13 @@ interface MusicPlayerState {
     playlist: PlaylistTrack[];
     currentIndex: number;
   }) => void;
-  /** 切换歌单曲目（设置 currentIndex/musicUrl/musicName/musicId，清空 lyric） */
-  switchToTrack: (index: number) => void;
-  /** 设置解析后的歌词 */
+  /** Resolves a playlist source only when selected, and caches the result on the track. */
+  prepareTrack: (index: number) => Promise<{ track: PlaylistTrack; url: string } | null>;
   setLyric: (lyric: LyricLine[] | null) => void;
-  /** 设置当前歌词行索引 */
   setCurrentLyricIndex: (index: number) => void;
-  /** 控制歌词面板显示 */
   setShowLyricPanel: (show: boolean) => void;
-  /** 设置静音状态 */
   setMuted: (muted: boolean) => void;
-  /** 设置音频错误 */
-  setAudioError: (error: boolean) => void;
-  /** 设置切歌过渡 */
+  setAudioError: (error: boolean, message?: string) => void;
   setSwitching: (switching: boolean) => void;
 }
 
@@ -187,11 +191,12 @@ export const useMusicPlayer = create<MusicPlayerState>((set, get) => ({
   showLyricPanel: false,
   muted: false,
   audioError: false,
+  audioErrorMessage: "",
   musicLoaded: false,
   switching: false,
 
   setActive: (postId, music) =>
-    set({ activePostId: postId, activePostMusic: music, switching: true, currentLyric: "", currentLyricIndex: -1 }),
+    set({ activePostId: postId, activePostMusic: music, switching: true, audioError: false, audioErrorMessage: "", currentLyric: "", currentLyricIndex: -1 }),
   clear: () =>
     set({
       activePostId: null,
@@ -199,6 +204,8 @@ export const useMusicPlayer = create<MusicPlayerState>((set, get) => ({
       isPlaying: false,
       isLoading: false,
       switching: false,
+      audioError: false,
+      audioErrorMessage: "",
       currentLyric: "",
       currentLyricIndex: -1,
     }),
@@ -214,32 +221,55 @@ export const useMusicPlayer = create<MusicPlayerState>((set, get) => ({
       musicUrl: data.mp3url,
       musicName: data.name,
       musicId: data.id,
-      // activePostMusic 已设置时不覆盖歌词（由 GlobalMusicManager 异步获取）
       lyric: hasActivePost ? get().lyric : data.lyric,
       playlist: data.playlist,
       currentIndex: data.currentIndex,
       musicLoaded: true,
+      switching: false,
     });
   },
-  switchToTrack: (index) => {
-    const { playlist } = get();
-    const track = playlist[index];
-    if (!track) return;
-    set({
-      currentIndex: index,
-      musicUrl: track.mp3url,
-      musicName: track.name,
-      musicId: track.id,
-      lyric: null,
-      currentLyric: "",
-      currentLyricIndex: -1,
-      audioError: false,
-    });
+  prepareTrack: async (index) => {
+    const requestId = ++trackRequestId;
+    const track = get().playlist[index];
+    if (!track) return null;
+    set({ switching: true, isLoading: true, audioError: false, audioErrorMessage: "" });
+
+    try {
+      const url = await resolveMusicUrl({
+        mp3url: track.mp3url,
+        id: track.id,
+        platform: track.platform,
+        extra: track.extra,
+      });
+      if (!url) throw new MusicResolutionError("no-url");
+      if (requestId !== trackRequestId) return null;
+
+      const resolvedTrack = { ...track, mp3url: url };
+      set((state) => ({
+        playlist: state.playlist.map((item, itemIndex) => itemIndex === index ? resolvedTrack : item),
+        currentIndex: index,
+        musicUrl: url,
+        musicName: resolvedTrack.name,
+        musicId: resolvedTrack.id,
+        lyric: null,
+        currentLyric: "",
+        currentLyricIndex: -1,
+        audioError: false,
+        audioErrorMessage: "",
+      }));
+      return { track: resolvedTrack, url };
+    } catch (error) {
+      if (requestId === trackRequestId) {
+        const message = error instanceof Error ? error.message : "无法获取可直连的播放地址。";
+        set({ switching: false, isLoading: false, audioError: true, audioErrorMessage: message });
+      }
+      return null;
+    }
   },
   setLyric: (lyric) => set({ lyric }),
   setCurrentLyricIndex: (index) => set({ currentLyricIndex: index }),
   setShowLyricPanel: (show) => set({ showLyricPanel: show }),
   setMuted: (muted) => set({ muted }),
-  setAudioError: (error) => set({ audioError: error }),
+  setAudioError: (error, message = "") => set({ audioError: error, audioErrorMessage: error ? message : "" }),
   setSwitching: (switching) => set({ switching }),
 }));

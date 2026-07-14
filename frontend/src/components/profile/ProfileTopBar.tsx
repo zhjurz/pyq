@@ -33,6 +33,7 @@ export default function ProfileTopBar({ coverHeight = 300, initialBgAlpha = 0, s
   const showLyricPanel = useMusicPlayer((s) => s.showLyricPanel);
   const muted = useMusicPlayer((s) => s.muted);
   const audioError = useMusicPlayer((s) => s.audioError);
+  const audioErrorMessage = useMusicPlayer((s) => s.audioErrorMessage);
   const musicLoaded = useMusicPlayer((s) => s.musicLoaded);
   const activePostMusic = useMusicPlayer((s) => s.activePostMusic);
   const playlist = useMusicPlayer((s) => s.playlist);
@@ -40,7 +41,7 @@ export default function ProfileTopBar({ coverHeight = 300, initialBgAlpha = 0, s
   const clearActivePost = useMusicPlayer((s) => s.clear);
   const setShowLyricPanel = useMusicPlayer((s) => s.setShowLyricPanel);
   const setMuted = useMusicPlayer((s) => s.setMuted);
-  const switchToTrack = useMusicPlayer((s) => s.switchToTrack);
+  const prepareTrack = useMusicPlayer((s) => s.prepareTrack);
 
   useEffect(() => {
     const measure = () => {
@@ -100,15 +101,20 @@ export default function ProfileTopBar({ coverHeight = 300, initialBgAlpha = 0, s
     };
   }, [surfaceColor, scrollFade]);
 
-  const togglePlay = () => {
+  const togglePlay = async () => {
     const audio = getGlobalAudio();
-    if (!audio || (!musicUrl && !activePostMusic)) return;
-    const targetUrl = activePostMusic ? activePostMusic.url : musicUrl;
+    if (!audio || (!musicUrl && !activePostMusic && playlist.length === 0)) return;
+    let targetUrl = activePostMusic?.url || musicUrl;
+    if (!targetUrl && !activePostMusic) {
+      const prepared = await prepareTrack(currentIndex);
+      if (!prepared) return;
+      targetUrl = prepared.url;
+    }
     // 强守卫：src 缺失或不匹配目标 URL 时重新加载，避免播放过期歌曲
     if (!audio.getAttribute("src") || !audio.src.includes(targetUrl)) {
       audio.src = targetUrl;
     }
-    if (audio.paused) audio.play().catch(() => useMusicPlayer.getState().setAudioError(true));
+    if (audio.paused) audio.play().catch(() => useMusicPlayer.getState().setAudioError(true, "播放地址已失效或被音源拒绝，请重试或切换曲目。"));
     else audio.pause();
   };
 
@@ -117,15 +123,15 @@ export default function ProfileTopBar({ coverHeight = 300, initialBgAlpha = 0, s
     if (audio) { audio.muted = !muted; setMuted(!muted); }
   };
 
-  const playTrack = (index: number) => {
+  const playTrack = async (index: number) => {
     const audio = getGlobalAudio();
     const st = useMusicPlayer.getState();
     if (!st.playlist[index] || !audio) return;
+    const prepared = await prepareTrack(index);
+    if (!prepared) return;
     if (st.activePostMusic) clearActivePost();
-    const track = st.playlist[index];
-    switchToTrack(index);
-    audio.src = track.mp3url;
-    audio.play().catch(() => useMusicPlayer.getState().setAudioError(true));
+    audio.src = prepared.url;
+    audio.play().catch(() => useMusicPlayer.getState().setAudioError(true, "播放地址已失效或被音源拒绝，请重试或切换曲目。"));
   };
 
   const playNext = () => {
@@ -197,7 +203,7 @@ export default function ProfileTopBar({ coverHeight = 300, initialBgAlpha = 0, s
                 <button
                   type="button"
                   onClick={togglePlay}
-                  disabled={!musicUrl && !activePostMusic}
+                  disabled={!musicUrl && !activePostMusic && playlist.length === 0}
                   className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-black/10 disabled:cursor-not-allowed"
                   aria-label={isPlaying ? "暂停" : "播放"}
                 >
@@ -208,10 +214,10 @@ export default function ProfileTopBar({ coverHeight = 300, initialBgAlpha = 0, s
                   onClick={() => { if (lyric && lyric.length > 0) setShowLyricPanel(true); }}
                   disabled={!lyric || lyric.length === 0}
                   className={`flex min-w-0 max-w-[160px] items-center truncate text-[11px] transition-opacity hover:opacity-80 disabled:cursor-default md:max-w-[240px] ${currentLyric ? "font-medium" : ""}`}
-                  title={lyric && lyric.length > 0 ? "点击查看歌词" : ""}
+                  title={audioError ? audioErrorMessage || "播放地址不可用" : lyric && lyric.length > 0 ? "点击查看歌词" : ""}
                 >
                   <span className="truncate">
-                    {!musicUrl && !activePostMusic ? "未设置" : audioError ? "无音乐" : currentLyric ? currentLyric : activePostMusic?.name || musicName || "音乐"}
+                    {!musicUrl && !activePostMusic && playlist.length === 0 ? "未设置" : audioError ? "播放不可用" : currentLyric ? currentLyric : activePostMusic?.name || musicName || "音乐"}
                   </span>
                 </button>
                 <button

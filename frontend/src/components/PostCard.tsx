@@ -220,7 +220,7 @@ export default function PostCard({ post, index, onDelete }: PostCardProps) {
         artist: post.music.artist,
         cover: post.music.cover,
         neteaseId: post.music.neteaseId || "",
-        platform: post.music.platform,
+        platform: post.music.platform || (post.music.source === "netease" ? "wy" : undefined),
         musicId: post.music.musicId,
         songmid: post.music.songmid,
         extra: post.music.extra,
@@ -228,8 +228,9 @@ export default function PostCard({ post, index, onDelete }: PostCardProps) {
       });
       audio.src = playUrl;
       await audio.play();
-    } catch {
-      useMusicPlayer.getState().setAudioError(true);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "无法获取可直连的播放地址。";
+      useMusicPlayer.getState().setAudioError(true, message);
     }
   };
 

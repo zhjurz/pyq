@@ -121,27 +121,9 @@ function formatPost(
   meLiked = false,
   commentLikesMap?: Map<string, { likeCount: number; meLiked: boolean }>
 ) {
-  // 如果音乐有 neteaseId，用代理 URL（实时获取有效 URL，避免过期 403）
-  let music = post.music || null;
-  if (music && music.source === "netease" && music.neteaseId) {
-    music = { ...music, url: `/api/music/stream?id=${music.neteaseId}` };
-  } else if (music && music.source === "musicfree" && music.platform && music.musicId) {
-    // MusicFree 音源（酷狗/QQ/酷我/咪咕等）：重写为流代理 URL，每次播放实时获取有效地址
-    // 解决 CDN URL 过期问题：插件返回的直链有时效性，存储的 URL 过期后无法播放
-    // 把 extra 字段展开成顶级 query 参数（值转字符串），避免 JSON 数字类型导致插件返回试听片段
-    const params = new URLSearchParams({
-      platform: music.platform,
-      id: String(music.musicId),
-    });
-    if (music.extra) {
-      const extraObj: Record<string, any> =
-        typeof music.extra === "string" ? (() => { try { return JSON.parse(music.extra); } catch { return {}; } })() : music.extra;
-      for (const [k, v] of Object.entries(extraObj)) {
-        if (v != null && v !== "") params.set(k, String(v));
-      }
-    }
-    music = { ...music, url: `/api/music/stream?${params.toString()}` };
-  }
+  // MusicFree 曲目由客户端播放时按需调用 /api/music/resolve 取得短期直链。
+  // 不重写为 /stream：Vercel 部署禁止音频经过 Serverless 函数。
+  const music = post.music || null;
   let linkCard = post.linkCard;
   if (typeof linkCard === "string") {
     try { linkCard = JSON.parse(linkCard); } catch { linkCard = null; }

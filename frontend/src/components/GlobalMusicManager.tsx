@@ -5,7 +5,7 @@ import { getGlobalAudio } from "@/lib/global-audio";
 import { useMusicPlayer, type LyricLine, type PlaylistTrack } from "@/lib/music-player-store";
 import { useSiteSettings } from "@/lib/site-settings-store";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
 const AUDIO_BASE = API_URL.replace("/api", "");
 
 function toAbsolute(url: string): string {
@@ -92,26 +92,27 @@ export default function GlobalMusicManager() {
         playlist?: PlaylistTrack[];
         currentIndex?: number;
       }, void]) => {
-        if (!data.mp3url) {
+        const playlist: PlaylistTrack[] = Array.isArray(data.playlist) && data.playlist.length > 0
+          ? data.playlist.map((track) => ({ ...track, mp3url: toAbsolute(track.mp3url) }))
+          : [];
+        const musicUrl = toAbsolute(data.mp3url || "");
+        if (!musicUrl && playlist.length === 0) {
           // 后端未配置音乐：标记已加载（避免顶栏一直显示骨架），停止切歌过渡
           useMusicPlayer.setState({ musicLoaded: true, switching: false });
           return;
         }
-        const playlist: PlaylistTrack[] = Array.isArray(data.playlist) && data.playlist.length > 0
-          ? data.playlist.map((t) => ({ ...t, mp3url: toAbsolute(t.mp3url) }))
-          : [];
-        const musicUrl = toAbsolute(data.mp3url);
+        const first = playlist[data.currentIndex || 0];
         useMusicPlayer.getState().initMusic({
           mp3url: musicUrl,
-          name: data.name || "",
-          id: data.id || "",
+          name: data.name || first?.name || "",
+          id: data.id || first?.id || "",
           lyric: data.lyric ? parseLyric(data.lyric) : null,
           playlist,
           currentIndex: data.currentIndex || 0,
         });
 
-        // 自动播放：站点设置开启时尝试播放（浏览器可能阻止，静默失败）
-        if (useSiteSettings.getState().musicAutoplay) {
+        // 只对本身就是直链的单曲尝试自动播放。歌单在用户选择时按需解析。
+        if (useSiteSettings.getState().musicAutoplay && musicUrl) {
           const audio = getGlobalAudio();
           if (audio) {
             audio.src = musicUrl;
@@ -153,31 +154,42 @@ export default function GlobalMusicManager() {
     const onPause = () => {
       useMusicPlayer.getState().setPlaying(false);
     };
+    const playPlaylistTrack = async (startIndex: number, play: boolean) => {
+      const initial = useMusicPlayer.getState();
+      const total = initial.playlist.length;
+      for (let offset = 0; offset < total; offset++) {
+        const index = (startIndex + offset) % total;
+        const prepared = await useMusicPlayer.getState().prepareTrack(index);
+        if (!prepared) continue;
+        audio.src = prepared.url;
+        if (play) {
+          try {
+            await audio.play();
+          } catch {
+            useMusicPlayer.getState().setAudioError(true, "播放地址已失效或被音源拒绝，请重试或切换曲目。");
+          }
+        } else {
+          audio.load();
+        }
+        return;
+      }
+      useMusicPlayer.getState().setPlaying(false);
+      useMusicPlayer.getState().setAudioError(true, "当前歌单没有可直连播放的曲目。");
+    };
     const onEnded = () => {
       const st = useMusicPlayer.getState();
-      // 动态音乐播完：回到歌单模式（不自动播放，但恢复 audio.src 以便用户点播放时放歌单曲目）
+      // 动态音乐播完：回到歌单模式（不自动播放，但恢复音频源供用户继续播放）
       if (st.activePostMusic) {
         st.clear();
-        const pl = st.playlist;
-        const idx = st.currentIndex;
-        if (pl[idx]) {
-          st.switchToTrack(idx);
-          audio.src = pl[idx].mp3url;
-          audio.load();
+        if (st.playlist.length > 0) {
+          void playPlaylistTrack(st.currentIndex, false);
         }
         st.setPlaying(false);
         return;
       }
-      // 歌单模式：自动下一首
-      const pl = st.playlist;
-      if (pl.length > 0) {
-        const next = (st.currentIndex + 1) % pl.length;
-        const track = pl[next];
-        if (track) {
-          st.switchToTrack(next);
-          audio.src = track.mp3url;
-          audio.play().catch(() => st.setAudioError(true));
-        }
+      // 歌单模式：自动下一首；最多尝试歌单长度次，跳过不支持的来源。
+      if (st.playlist.length > 0) {
+        void playPlaylistTrack((st.currentIndex + 1) % st.playlist.length, true);
       } else {
         st.setPlaying(false);
       }
@@ -186,7 +198,7 @@ export default function GlobalMusicManager() {
       const st = useMusicPlayer.getState();
       st.setSwitching(false);
       st.setLoading(false);
-      st.setAudioError(true);
+      st.setAudioError(true, "播放地址已失效或被音源拒绝，请重试或切换曲目。");
       st.setPlaying(false);
     };
     const onWaiting = () => useMusicPlayer.getState().setLoading(true);

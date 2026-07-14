@@ -35,7 +35,35 @@ Vercel 函数运行在 Vercel 的机房，无法访问你 VPS 内网里的 MySQL
 3. R2 → 管理 API 令牌 → 创建 API 令牌，权限选择 **对象读写**（Object Read & Write），记录 Access Key ID / Secret Access Key。
 4. 记录你的 Cloudflare 账户 ID（Account ID，在 Dashboard 右侧栏可见）。
 
-## 三、Vercel 项目配置
+### 3. 配置 R2 存储桶 CORS（浏览器直传必需）
+
+预签名 URL 指向 R2 的 S3 API 域名，和前端站点不是同源。**后端的 `CLIENT_URL` / Express CORS 配置不能替代 R2 Bucket CORS。**
+
+在 Cloudflare Dashboard → R2 → 对应 Bucket → **Settings → CORS Policy** 中，为实际允许上传的前端域名配置规则。将下面示例中的域名替换为你的生产域名；如需从特定 Vercel 预览域名上传，逐个显式加入该域名，生产环境不要使用 `*`：
+
+```json
+[
+  {
+    "AllowedOrigins": ["https://your-frontend.vercel.app", "https://www.yourdomain.com"],
+    "AllowedMethods": ["PUT", "GET", "HEAD"],
+    "AllowedHeaders": ["Content-Type"],
+    "ExposeHeaders": ["ETag", "cf-ray", "x-amz-request-id"],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+`PUT` 失败时按阶段排查：
+
+- **presign**：检查后端 R2 环境变量、管理员登录状态和文件类型/大小；
+- **浏览器网络/CORS**：在 DevTools Network 中检查 PUT 预检；确认该前端的完整协议和域名出现在 R2 CORS `AllowedOrigins`；
+- **PUT 403**：检查 Access Key/Secret、令牌是否具备目标 Bucket 的 Object Read & Write、系统时间、签名是否过期，以及请求 `Content-Type` 是否与签名一致；
+- **confirm**：检查后端是否能 `HEAD` / 复制临时对象，及对象 MIME、大小是否符合上传意图。
+
+### 4. 前端媒体域名
+
+在**前端** Vercel 项目构建环境中设置 `NEXT_PUBLIC_MEDIA_ORIGIN=https://media.yourdomain.com`。它必须等于稳定的公开 R2 自定义域名，用于 Next Image 白名单；它不会影响直接 PUT 的 CORS，后者由上述 Bucket CORS 决定。
+
 
 后端建议作为**独立的 Vercel 项目**部署（与前端项目分开），Root Directory 设置为 `backend`。
 
@@ -93,16 +121,16 @@ DB_HOST=... DB_USER=... DB_PASSWORD=... DB_NAME=... npm run db:seed
 1. 在前端 Vercel 项目的环境变量里，把 `BACKEND_URL` 改成新的后端 Vercel 部署域名（如 `https://your-backend.vercel.app`）。
 2. `NEXT_PUBLIC_API_URL` 保持 `/api`（相对路径）即可，无需改动。
 
-**大文件上传需要前端适配预签名直传接口**（见下方"已知限制"第 1 条）——这部分不在本次后端改造范围内，如需要我可以继续帮你更新前端上传逻辑。
+**大文件上传使用已接入的预签名直传流程**：前端的正常上传组件会按 `POST /api/media/presign → 浏览器直接 PUT 至 R2 → POST /api/media/confirm` 执行。浏览器不会把 JWT 发送给 R2，后端会在确认阶段验证临时对象的 MIME、大小和归属后再移动到公开媒体路径。
 
 ## 五、已知限制
 
-1. **Vercel Serverless 函数请求体上限约 4.5MB（平台硬限制，无法通过配置提高）**。原有的"直接把文件 POST 到后端"上传方式（`/api/upload/video`、`/api/upload/motion-photo`、`/api/media/upload` 等）只对小文件有效；视频（原限制 100MB）、动态照片（原限制 60MB）等大文件**必须**改走新增的预签名直传流程：
-   - `POST /api/upload/presign`（或 `/api/media/presign`）拿到 `uploadUrl` + `key`
-   - 浏览器 `fetch(uploadUrl, { method: "PUT", body: file })` 直接传给 R2
-   - `POST /api/upload/confirm`（或 `/api/media/confirm`）登记媒体记录
-   - 动态照片专用 `POST /api/upload/motion-photo/confirm`（`{ key, filename }`），由后端拉回文件做图片/视频拆分
-   这几个接口已经在后端实现好了，**前端调用逻辑目前还是走旧的直传方式**，超过约 4MB 的文件在 Vercel 上会先被平台拒绝（413），需要更新前端上传组件改走这条新路径才能完整生效。
+1. **Vercel Serverless 函数请求体上限约 4.5MB（平台硬限制，无法通过配置提高）**。普通图片、音频、视频和文件上传已使用受控的预签名直传流程，不会经过 Vercel 的请求体：
+   1. 浏览器携带 JWT 调用 `POST /api/media/presign`，后端创建有归属、过期时间、MIME 和大小限制的上传意图；
+   2. 浏览器以签名时约定的 `Content-Type` 直接 `PUT` 文件至 R2 的临时 `staging/` 路径；
+   3. 浏览器调用 `POST /api/media/confirm`，后端 `HEAD` 校验对象、复制到最终公开路径并登记媒体记录。
+
+   请勿把普通前端媒体上传改回旧的 `/api/upload/presign` 或后端 multipart 直传路径；后者会重新受 Vercel 请求体限制。动态照片的服务器端拆分流程仍有其专用确认接口。
 
 2. **限流是"尽力而为"的单实例内存限流**（`middleware/rateLimit.ts`），未跨函数实例共享状态。多个并发实例各自维护自己的计数器，理论上可绕过全局限流阈值。功能仍然有效，只是在高并发多实例场景下精确度不如单进程部署。如需严格的全局限流，可以后续接入 Upstash Redis 之类的共享存储，这属于新增能力，未包含在本次改造中。
 

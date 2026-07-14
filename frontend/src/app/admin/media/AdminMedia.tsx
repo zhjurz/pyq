@@ -88,6 +88,7 @@ export default function AdminMedia() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState("");
   const [selected, setSelected] = useState<MediaItem | null>(null);
   const [copied, setCopied] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -116,10 +117,15 @@ export default function AdminMedia() {
   const handleUpload = useCallback(async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     setUploading(true);
+    setUploadMessage("");
     const token = getToken();
-    if (!token) return;
+    if (!token) {
+      setUploading(false);
+      setUploadMessage("登录状态已失效，请重新登录后上传。");
+      return;
+    }
     let successCount = 0;
-    let failCount = 0;
+    const failures: string[] = [];
 
     for (const file of Array.from(files)) {
       try {
@@ -132,13 +138,21 @@ export default function AdminMedia() {
               : "file";
         await uploadDirect(file, token, kind);
         successCount++;
-      } catch {
-        failCount++;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "未知上传错误";
+        failures.push(`${file.name}：${message}`);
       }
     }
 
     setUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
+    if (failures.length > 0) {
+      setUploadMessage(
+        `${successCount > 0 ? `已上传 ${successCount} 个文件；` : ""}${failures.length} 个文件上传失败。${failures.slice(0, 2).join(" ")}`
+      );
+    } else {
+      setUploadMessage(`已成功上传 ${successCount} 个文件。`);
+    }
 
     if (successCount > 0) {
       // 刷新列表
@@ -221,6 +235,12 @@ export default function AdminMedia() {
           onChange={(e) => handleUpload(e.target.files)}
         />
       </div>
+
+      {uploadMessage && (
+        <div className={`mb-4 rounded-lg border px-3 py-2 text-sm ${uploadMessage.includes("失败") ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300" : "border-green-200 bg-green-50 text-green-700 dark:border-green-900/60 dark:bg-green-950/30 dark:text-green-300"}`}>
+          {uploadMessage}
+        </div>
+      )}
 
       {/* 类型筛选 */}
       <div className="mb-4 flex flex-wrap gap-2">
