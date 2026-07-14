@@ -132,9 +132,7 @@ function extractExtraFields(track: MusicItem): Record<string, any> {
   return extra;
 }
 
-/**
- * 构造流式代理 URL：透传所有音源特定字段。
- */
+/** 流式代理 URL（仅非 Vercel 且显式开启 ALLOW_AUDIO_PROXY 时的兼容路径）。 */
 function toStreamUrl(
   platform: string,
   id: string,
@@ -154,29 +152,75 @@ function toStreamUrl(
   return `/api/music/stream?${params.toString()}`;
 }
 
-/** 简单内存缓存：避免每次播放都重复请求平台 API */
+interface DirectResolution {
+  playable: boolean;
+  mode: "direct" | "unsupported";
+  url?: string;
+  reason?: "no-url" | "headers-required" | "unsafe-url";
+}
+
 interface CacheEntry {
-  url: string;
+  resolution: DirectResolution;
   expireAt: number;
 }
 const mediaCache = new Map<string, CacheEntry>();
-const CACHE_TTL = 30 * 60 * 1000; // 30 分钟
+const CACHE_TTL = 5 * 60 * 1000;
 
-function getMediaCache(platform: string, id: string, quality: string): string | null {
-  const key = `${platform}:${id}:${quality}`;
+function getResolutionCache(key: string): DirectResolution | null {
   const entry = mediaCache.get(key);
   if (!entry) return null;
   if (Date.now() > entry.expireAt) {
     mediaCache.delete(key);
     return null;
   }
-  return entry.url;
+  return entry.resolution;
 }
 
-function setMediaCache(platform: string, id: string, quality: string, url: string): void {
-  if (!url) return;
-  const key = `${platform}:${id}:${quality}`;
-  mediaCache.set(key, { url, expireAt: Date.now() + CACHE_TTL });
+function setResolutionCache(key: string, resolution: DirectResolution): void {
+  mediaCache.set(key, { resolution, expireAt: Date.now() + CACHE_TTL });
+}
+
+function directUrl(url: string): string | null {
+  if (!isSafeUrl(url)) return null;
+  try {
+    const parsed = new URL(url);
+    // HTTPS 页面不可播放 HTTP 混合内容；常见音源域名支持 HTTPS 时优先升级。
+    if (parsed.protocol === "http:") parsed.protocol = "https:";
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+async function resolveDirectMedia(
+  source: ReturnType<typeof getSource>,
+  item: MusicItem,
+  quality: Quality,
+  refresh = false
+): Promise<DirectResolution> {
+  if (!source) return { playable: false, mode: "unsupported", reason: "no-url" };
+  const extras = extractExtraFields(item);
+  const cacheKey = `${source.code}:${item.id}:${quality}:${JSON.stringify(extras)}`;
+  if (!refresh) {
+    const cached = getResolutionCache(cacheKey);
+    if (cached) return cached;
+  }
+
+  try {
+    const result = await source.getStreamUrl(item, quality);
+    const hasHeaders = !!result?.userAgent || Object.keys(result?.headers || {}).length > 0;
+    const url = result?.url ? directUrl(result.url) : null;
+    const resolution: DirectResolution = hasHeaders
+      ? { playable: false, mode: "unsupported", reason: "headers-required" }
+      : url
+        ? { playable: true, mode: "direct", url }
+        : { playable: false, mode: "unsupported", reason: result?.url ? "unsafe-url" : "no-url" };
+    setResolutionCache(cacheKey, resolution);
+    return resolution;
+  } catch (err) {
+    console.error("[music] direct resolve error:", err);
+    return { playable: false, mode: "unsupported", reason: "no-url" };
+  }
 }
 
 // GET /api/music/sources — 列出所有内嵌音源（前端 PublishModal 用）
@@ -274,9 +318,32 @@ router.post("/import-sheet", authenticate, async (req: AuthRequest, res: Respons
   }
 });
 
-// GET /api/music/stream — 流式代理播放
-// 支持参数：platform+id（主方式，透传所有音源字段）、url（直链代理）
+// GET /api/music/resolve — 仅解析直连播放地址，不代理任何音频字节
+router.get("/resolve", async (req: Request, res: Response) => {
+  const platform = String(req.query.platform || "");
+  const id = String(req.query.id || "");
+  const quality = String(req.query.quality || "standard") as Quality;
+  if (!platform || !id) {
+    res.status(400).json({ message: "请提供 platform 和 id 参数" });
+    return;
+  }
+  const source = getSource(platform);
+  if (!source) {
+    res.status(404).json({ message: "未找到对应音源" });
+    return;
+  }
+  const item = buildMusicItem(source.code, id, req.query);
+  const resolution = await resolveDirectMedia(source, item, quality, req.query.refresh === "1");
+  res.json({ ...resolution, platform: source.code, id });
+});
+
+// GET /api/music/stream — 仅供非 Vercel 的显式兼容部署使用。
+// Vercel 生产环境严禁音频经过函数，前端应使用 /api/music/resolve 返回的直链。
 router.get("/stream", async (req: Request, res: Response) => {
+  if (process.env.VERCEL || process.env.ALLOW_AUDIO_PROXY !== "true") {
+    res.status(410).json({ message: "当前部署禁止音频代理，请使用直连音源" });
+    return;
+  }
   const platform = String(req.query.platform || "");
   const id = String(req.query.id || "");
   const quality: Quality = (String(req.query.quality || "standard") as Quality);
@@ -292,36 +359,13 @@ router.get("/stream", async (req: Request, res: Response) => {
       return;
     }
 
-    // 优先查缓存
-    const cached = getMediaCache(source.code, id, quality);
-    if (cached) {
-      targetUrl = cached;
-    } else {
-      try {
-        const musicItem = buildMusicItem(source.code, id, req.query);
-        // MusicFree 插件返回 { url, headers?, userAgent? }（含防盗链请求头）
-        const result = await source.getStreamUrl(musicItem, quality);
-        if (!result?.url) {
-          res.status(404).json({ message: "无法获取播放地址（可能版权受限或未安装音源插件）" });
-          return;
-        }
-        targetUrl = result.url;
-        // 透传插件返回的请求头（如 Referer/Cookie/UA，防盗链必需）
-        if (result.headers) {
-          for (const [k, v] of Object.entries(result.headers)) {
-            headers[k] = v;
-          }
-        }
-        if (result.userAgent && !headers["User-Agent"] && !headers["user-agent"]) {
-          headers["User-Agent"] = result.userAgent;
-        }
-        setMediaCache(source.code, id, quality, targetUrl);
-      } catch (err) {
-        console.error("[music] getStreamUrl error:", err);
-        res.status(502).json({ message: "音源暂时不可用" });
-        return;
-      }
+    const musicItem = buildMusicItem(source.code, id, req.query);
+    const resolution = await resolveDirectMedia(source, musicItem, quality);
+    if (!resolution.playable || !resolution.url) {
+      res.status(404).json({ message: "该音源无法通过直连方式播放" });
+      return;
     }
+    targetUrl = resolution.url;
   } else if (directUrl) {
     targetUrl = directUrl;
     headers["User-Agent"] =
@@ -416,23 +460,34 @@ router.get("/", async (_req: Request, res: Response) => {
         const tracks = await source.importPlaylist(setting.playlistId);
         if (tracks && tracks.length > 0) {
           const first = tracks[0];
-          const playlist = tracks.map((t) => {
+          const playlist = await Promise.all(tracks.map(async (t) => {
             const extra = extractExtraFields(t);
+            const item: MusicItem = { ...t, id: String(t.id || ""), platform: source.code };
+            const resolution = await resolveDirectMedia(source, item, "standard");
             return {
               id: String(t.id || ""),
               name: t.title || "音乐",
               artist: t.artist || "",
               cover: t.artwork || "",
-              mp3url: toStreamUrl(source.code, String(t.id), extra),
+              mp3url: resolution.url || "",
+              playable: resolution.playable,
+              reason: resolution.reason,
               lyric: t.rawLrc || t.lrc || "",
               platform: source.code,
               extra,
             };
-          });
+          }));
           const firstExtra = extractExtraFields(first);
+          const firstResolution = await resolveDirectMedia(
+            source,
+            { ...first, id: String(first.id || ""), platform: source.code },
+            "standard"
+          );
           res.json({
             name: first.title || "音乐",
-            mp3url: toStreamUrl(source.code, String(first.id), firstExtra),
+            mp3url: firstResolution.url || "",
+            playable: firstResolution.playable,
+            reason: firstResolution.reason,
             cover: first.artwork || "",
             author: first.artist || "",
             lyric: first.rawLrc || first.lrc || "",
@@ -454,17 +509,18 @@ router.get("/", async (_req: Request, res: Response) => {
     if (setting.musicId) {
       try {
         const musicItem: MusicItem = { id: setting.musicId, platform: source.code };
-        const [streamResult, info, lyricResult] = await Promise.all([
-          source.getStreamUrl(musicItem, "standard").catch(() => ({ url: "" })),
+        const [, info, lyricResult] = await Promise.all([
+          resolveDirectMedia(source, musicItem, "standard"),
           source.getInfo(musicItem).catch(() => ({})),
           source.getLyric(musicItem).catch(() => ({ rawLrc: "" })),
         ]);
 
-        const streamUrl = (streamResult as any)?.url || "";
-        if (streamUrl || setting.musicUrl) {
+        const resolution = await resolveDirectMedia(source, musicItem, "standard");
+        if (resolution.playable && resolution.url) {
           res.json({
             name: (info as any)?.title || "",
-            mp3url: toStreamUrl(source.code, setting.musicId),
+            mp3url: resolution.url,
+            playable: true,
             cover: (info as any)?.artwork || "",
             author: (info as any)?.artist || "",
             lyric: (lyricResult as any)?.rawLrc || "",
@@ -541,24 +597,24 @@ router.post("/preview", authenticate, async (req: AuthRequest, res: Response) =>
       ...(extra && typeof extra === "object" ? extra : {}),
     };
 
-    // 并行获取：元数据 + 播放地址 + 歌词
-    const [info, streamResult, lyricResult] = await Promise.all([
+    const [info, lyricResult, resolution] = await Promise.all([
       source.getInfo(musicItem).catch(() => ({})),
-      source.getStreamUrl(musicItem, "standard").catch(() => ({ url: "" })),
       source.getLyric(musicItem).catch(() => ({ rawLrc: "" })),
+      resolveDirectMedia(source, musicItem, "standard"),
     ]);
 
     const resultExtra = extractExtraFields(musicItem);
-    const streamUrl = (streamResult as any)?.url || "";
 
     res.json({
       name: (info as any)?.title || title || "",
       author: (info as any)?.artist || artist || "",
       cover: (info as any)?.artwork || artwork || "",
-      mp3url: streamUrl ? toStreamUrl(source.code, String(id), resultExtra) : "",
+      mp3url: resolution.url || "",
       lyric: (lyricResult as any)?.rawLrc || "",
       tlyric: (lyricResult as any)?.translation || "",
-      playable: !!streamUrl,
+      playable: resolution.playable,
+      playbackMode: resolution.mode,
+      reason: resolution.reason,
       platform: source.code,
       musicId: String(id),
       extra: resultExtra,
@@ -586,19 +642,23 @@ router.get("/playlist", authenticate, async (req: AuthRequest, res: Response) =>
     }
 
     const tracks = await source.importPlaylist(id);
-    const data = (tracks || []).map((t) => {
+    const data = await Promise.all((tracks || []).map(async (t) => {
       const extra = extractExtraFields(t);
+      const item: MusicItem = { ...t, id: String(t.id || ""), platform: source.code };
+      const resolution = await resolveDirectMedia(source, item, "standard");
       return {
         id: String(t.id || ""),
         name: t.title || "音乐",
         artist: t.artist || "",
         cover: t.artwork || "",
-        mp3url: toStreamUrl(source.code, String(t.id), extra),
+        mp3url: resolution.url || "",
+        playable: resolution.playable,
+        reason: resolution.reason,
         lyric: t.rawLrc || t.lrc || "",
         platform: source.code,
         extra,
       };
-    });
+    }));
     res.json({ tracks: data });
   } catch (err) {
     console.error("[music] playlist error:", err);

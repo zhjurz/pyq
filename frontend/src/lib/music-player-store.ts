@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
 
 /**
  * 动态音乐的可播放 URL。
@@ -11,27 +11,36 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
  * extra 字段展开成顶级 query 参数（值转字符串），
  * 避免 JSON 数字类型（如 albumid:36062）导致插件返回试听片段而非完整音频。
  */
-export function resolvePostMusicUrl(music: {
+export async function resolvePostMusicUrl(music: {
   url?: string;
   source?: string;
   platform?: string;
   musicId?: string;
   songmid?: string;
   extra?: Record<string, any>;
-}): string {
-  // MusicFree 插件源 → 代理端点（实时解析，永不过期）
+}, refresh = false): Promise<string> {
   if (music.source === "musicfree" && music.platform && music.musicId) {
-    const params = new URLSearchParams();
-    params.set("platform", music.platform);
-    params.set("id", String(music.musicId));
+    const params = new URLSearchParams({
+      platform: music.platform,
+      id: String(music.musicId),
+      quality: "standard",
+    });
+    if (refresh) params.set("refresh", "1");
     const extra: Record<string, any> = { ...(music.extra || {}) };
     if (music.songmid && !extra.songmid) extra.songmid = music.songmid;
     for (const [k, v] of Object.entries(extra)) {
       if (v != null && v !== "") params.set(k, String(v));
     }
-    return `${API_URL}/music/stream?${params.toString()}`;
+    const response = await fetch(`${API_URL}/music/resolve?${params.toString()}`);
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.playable || !data?.url) {
+      const reason = data?.reason === "headers-required"
+        ? "该音源需要防盗链请求头，无法在直连模式播放"
+        : "无法获取可直连的播放地址";
+      throw new Error(reason);
+    }
+    return data.url;
   }
-  // 上传 / 其他：解析存储的 url 为绝对路径
   const rawUrl = music.url || "";
   if (!rawUrl) return "";
   if (rawUrl.startsWith("http")) return rawUrl;

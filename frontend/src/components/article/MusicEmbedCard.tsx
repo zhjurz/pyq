@@ -8,7 +8,7 @@ import { getGlobalAudio } from "@/lib/global-audio";
 import { toHttps, toAbsoluteUrl } from "@/lib/upload";
 import LazyImage from "@/components/LazyImage";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
 
 interface MusicEmbedCardProps {
   music: PostMusic;
@@ -68,32 +68,32 @@ export default function MusicEmbedCard({ music, postId }: MusicEmbedCardProps) {
     st.setLoading(false);
   }, [music]);
 
-  const startPlayback = useCallback(() => {
+  const startPlayback = useCallback(async () => {
     const audio = getGlobalAudio();
     if (!audio) return;
 
-    const playUrl = resolvePostMusicUrl(music);
-    if (!playUrl) {
-      handlePlayError(new Error("无法解析播放地址"), "no playUrl");
-      return;
+    try {
+      const playUrl = await resolvePostMusicUrl(music);
+      if (!playUrl) throw new Error("无法解析播放地址");
+      setActiveMusic(postId, {
+        postId,
+        url: playUrl,
+        name: music.name,
+        artist: music.artist,
+        cover: music.cover,
+        neteaseId: music.neteaseId || "",
+        platform: music.platform,
+        musicId: music.musicId,
+        songmid: music.songmid,
+        extra: music.extra,
+        lrc: music.lrc,
+      });
+      audio.src = playUrl;
+      audio.load();
+      await audio.play();
+    } catch (err) {
+      handlePlayError(err, "direct play failed");
     }
-
-    setActiveMusic(postId, {
-      postId,
-      url: playUrl,
-      name: music.name,
-      artist: music.artist,
-      cover: music.cover,
-      neteaseId: music.neteaseId || "",
-      platform: music.platform,
-      musicId: music.musicId,
-      songmid: music.songmid,
-      extra: music.extra,
-      lrc: music.lrc,
-    });
-    audio.src = playUrl;
-    audio.load();
-    audio.play().catch((e) => handlePlayError(e, "initial play failed"));
   }, [music, postId, setActiveMusic, handlePlayError]);
 
   const handleClick = useCallback(() => {

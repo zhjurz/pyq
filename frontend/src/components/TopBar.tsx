@@ -1245,7 +1245,12 @@ export function PublishModal({
       });
       if (res.ok) {
         const data = await res.json();
-        // 优先用搜索结果的 extra，回退 preview 返回的 extra
+        if (!data.playable) {
+          setError(data.reason === "headers-required"
+            ? "该音源需要防盗链请求头，不能在直连模式播放"
+            : "该歌曲无法获取可直连的播放地址");
+          return;
+        }
         const finalExtra =
           Object.keys(extra).length > 0 ? extra : (data.extra || undefined);
         setMusic({

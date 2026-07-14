@@ -195,14 +195,12 @@ export default function PostCard({ post, index, onDelete }: PostCardProps) {
     setShowComments((prev) => !prev);
   };
 
-  // 点击动态音乐卡片：由全局 audio 接管播放，悬浮卡片由 store.activePostMusic 自动控制显示
-  // iOS 要求 play() 必须在用户手势同步上下文中调用，所以这里同步设置 src 并 play
-  const handleMusicClick = () => {
+  // 点击动态音乐卡片：后端只解析直连地址，浏览器直接从音乐源下载音频。
+  const handleMusicClick = async () => {
     if (!post.music) return;
     const audio = getGlobalAudio();
     if (!audio) return;
 
-    // 已是当前动态：切换播放/暂停
     if (isThisActive) {
       if (audio.paused) {
         audio.play().catch(() => {});
@@ -212,25 +210,27 @@ export default function PostCard({ post, index, onDelete }: PostCardProps) {
       return;
     }
 
-    // 解析可播放 URL：MusicFree 插件源走 /api/music/stream 代理（实时拿新 URL，避免直链过期）
-    const playUrl = resolvePostMusicUrl(post.music);
-    if (!playUrl) return;
-
-    setActiveMusic(post.id, {
-      postId: post.id,
-      url: playUrl,
-      name: post.music.name,
-      artist: post.music.artist,
-      cover: post.music.cover,
-      neteaseId: post.music.neteaseId || "",
-      platform: post.music.platform,
-      musicId: post.music.musicId,
-      songmid: post.music.songmid,
-      extra: post.music.extra,
-      lrc: post.music.lrc,
-    });
-    audio.src = playUrl;
-    audio.play().catch(() => {});
+    try {
+      const playUrl = await resolvePostMusicUrl(post.music);
+      if (!playUrl) return;
+      setActiveMusic(post.id, {
+        postId: post.id,
+        url: playUrl,
+        name: post.music.name,
+        artist: post.music.artist,
+        cover: post.music.cover,
+        neteaseId: post.music.neteaseId || "",
+        platform: post.music.platform,
+        musicId: post.music.musicId,
+        songmid: post.music.songmid,
+        extra: post.music.extra,
+        lrc: post.music.lrc,
+      });
+      audio.src = playUrl;
+      await audio.play();
+    } catch {
+      useMusicPlayer.getState().setAudioError(true);
+    }
   };
 
   useEffect(() => {

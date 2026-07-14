@@ -228,7 +228,7 @@ export default function PostDetail({ post }: PostDetailProps) {
     });
   };
 
-  const handleMusicClick = () => {
+  const handleMusicClick = async () => {
     if (!post.music) return;
     const audio = getGlobalAudio();
     if (!audio) return;
@@ -237,23 +237,27 @@ export default function PostDetail({ post }: PostDetailProps) {
       else audio.pause();
       return;
     }
-    const playUrl = resolvePostMusicUrl(post.music);
-    if (!playUrl) return;
-    setActiveMusic(post.id, {
-      postId: post.id,
-      url: playUrl,
-      name: post.music.name,
-      artist: post.music.artist,
-      cover: post.music.cover,
-      neteaseId: post.music.neteaseId || "",
-      platform: post.music.platform,
-      musicId: post.music.musicId,
-      songmid: post.music.songmid,
-      extra: post.music.extra,
-      lrc: post.music.lrc,
-    });
-    audio.src = playUrl;
-    audio.play().catch(() => {});
+    try {
+      const playUrl = await resolvePostMusicUrl(post.music);
+      if (!playUrl) return;
+      setActiveMusic(post.id, {
+        postId: post.id,
+        url: playUrl,
+        name: post.music.name,
+        artist: post.music.artist,
+        cover: post.music.cover,
+        neteaseId: post.music.neteaseId || "",
+        platform: post.music.platform,
+        musicId: post.music.musicId,
+        songmid: post.music.songmid,
+        extra: post.music.extra,
+        lrc: post.music.lrc,
+      });
+      audio.src = playUrl;
+      await audio.play();
+    } catch {
+      useMusicPlayer.getState().setAudioError(true);
+    }
   };
 
   const displayName = post.isAd ? post.adNickname || "广告" : post.author.nickname;
