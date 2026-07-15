@@ -47,6 +47,12 @@ interface SiteSettingAttributes {
   doubanSyncedAt: Date | null;
   /** 最近一次同步错误的安全摘要 */
   doubanLastError: string | null;
+  /** 跨 Vercel 实例的豆瓣同步租约 ID */
+  doubanSyncLeaseId: string | null;
+  /** 豆瓣同步租约的过期时间 */
+  doubanSyncLeaseExpiresAt: Date | null;
+  /** 最近一次豆瓣同步尝试时间 */
+  doubanLastAttemptAt: Date | null;
   /** 评论违禁词列表，JSON 数组字符串 */
   bannedWords: string | null;
   /** 进入网站是否自动播放歌单音乐 */
@@ -55,7 +61,7 @@ interface SiteSettingAttributes {
 
 interface SiteSettingCreationAttributes extends Optional<
   SiteSettingAttributes,
-  "id" | "siteName" | "description" | "keywords" | "domain" | "beian" | "faviconUrl" | "ogImage" | "backgroundImages" | "darkModeEnabled" | "darkModeStartTime" | "darkModeEndTime" | "emailNotifyEnabled" | "notifyEmail" | "smtpHost" | "smtpPort" | "smtpSecure" | "smtpUser" | "smtpPass" | "smtpFrom" | "emailTemplate" | "amapJsKey" | "amapSecurityJsCode" | "amapKey" | "beianUrl" | "socialLinks" | "postCollapseLength" | "fontUrl" | "adOnArchives" | "commentAntiSpamEnabled" | "rssEnabled" | "rssIncludeMoments" | "doubanId" | "doubanCache" | "doubanSyncStatus" | "doubanSyncedAt" | "doubanLastError" | "bannedWords" | "musicAutoplay"
+  "id" | "siteName" | "description" | "keywords" | "domain" | "beian" | "faviconUrl" | "ogImage" | "backgroundImages" | "darkModeEnabled" | "darkModeStartTime" | "darkModeEndTime" | "emailNotifyEnabled" | "notifyEmail" | "smtpHost" | "smtpPort" | "smtpSecure" | "smtpUser" | "smtpPass" | "smtpFrom" | "emailTemplate" | "amapJsKey" | "amapSecurityJsCode" | "amapKey" | "beianUrl" | "socialLinks" | "postCollapseLength" | "fontUrl" | "adOnArchives" | "commentAntiSpamEnabled" | "rssEnabled" | "rssIncludeMoments" | "doubanId" | "doubanCache" | "doubanSyncStatus" | "doubanSyncedAt" | "doubanLastError" | "doubanSyncLeaseId" | "doubanSyncLeaseExpiresAt" | "doubanLastAttemptAt" | "bannedWords" | "musicAutoplay"
 > {}
 
 class SiteSetting
@@ -99,6 +105,9 @@ class SiteSetting
   declare doubanSyncStatus: string;
   declare doubanSyncedAt: Date | null;
   declare doubanLastError: string | null;
+  declare doubanSyncLeaseId: string | null;
+  declare doubanSyncLeaseExpiresAt: Date | null;
+  declare doubanLastAttemptAt: Date | null;
   declare bannedWords: string | null;
   declare musicAutoplay: boolean;
   declare readonly createdAt: Date;
@@ -287,6 +296,21 @@ SiteSetting.init(
     },
     doubanLastError: {
       type: DataTypes.TEXT,
+      allowNull: true,
+      defaultValue: null,
+    },
+    doubanSyncLeaseId: {
+      type: DataTypes.STRING(64),
+      allowNull: true,
+      defaultValue: null,
+    },
+    doubanSyncLeaseExpiresAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      defaultValue: null,
+    },
+    doubanLastAttemptAt: {
+      type: DataTypes.DATE,
       allowNull: true,
       defaultValue: null,
     },

@@ -58,6 +58,8 @@ export interface PostVideo {
   platform?: string;
   sourceUrl?: string;
   embedCode?: string;
+  /** public CDN 可直连；proxy 需要后端代理；source-page 只能跳转原平台 */
+  playback?: "direct" | "proxy" | "source-page";
   source: "parse" | "upload" | "url" | "embed";
 }
 

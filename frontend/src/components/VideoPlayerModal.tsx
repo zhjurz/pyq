@@ -2,13 +2,24 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { X, RefreshCw, AlertCircle } from "lucide-react";
+import { X, RefreshCw, AlertCircle, ExternalLink } from "lucide-react";
 import type { PostVideo } from "@/lib/mock-data";
 import { toAbsoluteUrl } from "@/lib/upload";
 import { PUBLIC_API_URL } from "@/lib/api-fetch";
 import CustomVideoPlayer from "./CustomVideoPlayer";
 
 const API_URL = PUBLIC_API_URL;
+
+const DIRECT_PLAYBACK_SUFFIXES = ["yximgs.com", "ndcimgs.com"];
+
+function isDirectPublicVideo(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase().replace(/\.$/, "");
+    return DIRECT_PLAYBACK_SUFFIXES.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
+  } catch {
+    return false;
+  }
+}
 
 const PLATFORM_LABELS: Record<string, string> = {
   douyin: "抖音",
@@ -99,10 +110,17 @@ export default function VideoPlayerModal({ video, onClose, postId, onRefreshed }
         setErrorMsg(errMsg || "解析失败");
         return;
       }
-      setFreshVideo(data as PostVideo);
+      const fresh = data as PostVideo;
+      setFreshVideo(fresh);
+      // 平台未提供匿名可播放媒体时，仅保留原平台跳转兜底。
+      if (fresh.playback === "source-page") {
+        setPhase("error");
+        setErrorMsg("该平台暂未提供可直接播放的视频，请在原平台观看");
+        return;
+      }
       // 回传最新数据给父组件，让动态卡片信息（头像/昵称/标题/点赞）跟着更新
       if (onRefreshed) {
-        try { onRefreshed(data as PostVideo); } catch { /* 父组件已卸载等，忽略 */ }
+        try { onRefreshed(fresh); } catch { /* 父组件已卸载等，忽略 */ }
       }
       // 解析完成，进入 video 加载阶段
       setPhase("load");
@@ -175,7 +193,8 @@ export default function VideoPlayerModal({ video, onClose, postId, onRefreshed }
   const currentVideo = freshVideo || video;
   const cover = currentVideo.cover ? toAbsoluteUrl(currentVideo.cover) : undefined;
   const rawUrl = toAbsoluteUrl(currentVideo.url || "");
-  const videoSrc = rawUrl.startsWith("http")
+  const playback = currentVideo.playback || (isDirectPublicVideo(rawUrl) ? "direct" : "proxy");
+  const videoSrc = playback === "direct" ? rawUrl : rawUrl.startsWith("http")
     ? `${API_URL}/video/proxy?url=${encodeURIComponent(rawUrl)}`
     : rawUrl;
   const likeText = formatLike(currentVideo.like);
@@ -190,14 +209,14 @@ export default function VideoPlayerModal({ video, onClose, postId, onRefreshed }
   };
 
   const handleVideoError = () => {
-    // 链接过期时自动重新解析一次（跳过 refresh 缓存），失败再显示错误
-    if (!autoRetriedRef.current) {
+    // 链接过期时自动重新解析一次（跳过 refresh 缓存），失败后引导用户打开原平台。
+    if (!autoRetriedRef.current && sourceUrl) {
       autoRetriedRef.current = true;
       setRefreshKey((k) => k + 1);
       return;
     }
     setPhase("error");
-    setErrorMsg("视频加载失败，链接可能已过期");
+    setErrorMsg("视频暂时无法播放，请在原平台观看");
   };
 
   // 封面模糊背景层在非 play 阶段显示，提供视觉内容（抖音风格）
@@ -319,6 +338,17 @@ export default function VideoPlayerModal({ video, onClose, postId, onRefreshed }
                   <RefreshCw className="h-3.5 w-3.5" />
                   重新解析
                 </button>
+                {infoHref && (
+                  <a
+                    href={infoHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 rounded-full bg-white px-4 py-1.5 text-sm font-medium text-black transition-colors hover:bg-white/90"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    在原平台打开
+                  </a>
+                )}
               </div>
             </div>
           )}

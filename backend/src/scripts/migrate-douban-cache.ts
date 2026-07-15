@@ -5,6 +5,9 @@ const columns = [
   "ADD COLUMN douban_sync_status VARCHAR(20) NOT NULL DEFAULT 'never'",
   "ADD COLUMN douban_synced_at DATETIME NULL",
   "ADD COLUMN douban_last_error TEXT NULL",
+  "ADD COLUMN douban_sync_lease_id VARCHAR(64) NULL",
+  "ADD COLUMN douban_sync_lease_expires_at DATETIME NULL",
+  "ADD COLUMN douban_last_attempt_at DATETIME NULL",
 ];
 
 async function migrateDoubanCache() {

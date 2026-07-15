@@ -94,6 +94,7 @@ router.put(
     }
 
     const setting = await ensureSetting();
+    const doubanIdChanged = req.body.doubanId !== undefined && req.body.doubanId !== setting.doubanId;
     await setting.update({
       siteName: req.body.siteName ?? setting.siteName,
       description: req.body.description ?? setting.description,
@@ -114,6 +115,12 @@ router.put(
       rssEnabled: req.body.rssEnabled ?? setting.rssEnabled,
       rssIncludeMoments: req.body.rssIncludeMoments ?? setting.rssIncludeMoments,
       doubanId: req.body.doubanId ?? setting.doubanId,
+      doubanCache: doubanIdChanged ? null : setting.doubanCache,
+      doubanSyncStatus: doubanIdChanged ? "never" : setting.doubanSyncStatus,
+      doubanSyncedAt: doubanIdChanged ? null : setting.doubanSyncedAt,
+      doubanLastError: doubanIdChanged ? null : setting.doubanLastError,
+      doubanSyncLeaseId: doubanIdChanged ? null : setting.doubanSyncLeaseId,
+      doubanSyncLeaseExpiresAt: doubanIdChanged ? null : setting.doubanSyncLeaseExpiresAt,
       musicAutoplay: req.body.musicAutoplay ?? setting.musicAutoplay,
       emailNotifyEnabled: req.body.emailNotifyEnabled ?? setting.emailNotifyEnabled,
       notifyEmail: req.body.notifyEmail ?? setting.notifyEmail,
@@ -154,9 +161,8 @@ router.put(
 
 // GET /api/settings/default-template - built-in email HTML (admin only)
 router.get("/default-template", authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
-  res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.setHeader("Cache-Control", "no-store");
-  res.send(DEFAULT_EMAIL_TEMPLATE);
+  res.json({ template: DEFAULT_EMAIL_TEMPLATE, templateVersion: 1 });
 });
 
 // GET /api/settings/email-config - email config (admin only, includes smtpPass)

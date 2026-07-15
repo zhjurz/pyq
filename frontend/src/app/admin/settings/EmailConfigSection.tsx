@@ -63,6 +63,8 @@ export default function EmailConfigSection() {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [showTemplate, setShowTemplate] = useState(false);
+  const [templateLoading, setTemplateLoading] = useState(false);
+  const [templateError, setTemplateError] = useState("");
 
   useEffect(() => {
     apiFetch("/settings/email-config")
@@ -130,17 +132,23 @@ export default function EmailConfigSection() {
   };
 
   const handleLoadDefault = async () => {
+    setTemplateLoading(true);
+    setTemplateError("");
     try {
       const res = await apiFetch("/settings/default-template");
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.message || "加载默认模板失败");
+        throw new Error(data?.message || `加载默认模板失败（${res.status}）`);
       }
-      const html = await res.text();
-      setConfig({ ...config, emailTemplate: html, isDefaultTemplate: false });
+      if (!data || typeof data.template !== "string" || !data.template.trim()) {
+        throw new Error("默认模板响应无效，请确认前后端已部署到同一版本");
+      }
+      setConfig({ ...config, emailTemplate: data.template, isDefaultTemplate: false });
       setShowTemplate(true);
     } catch (error) {
-      alert(error instanceof Error ? error.message : "加载默认模板失败");
+      setTemplateError(error instanceof Error ? error.message : "加载默认模板失败");
+    } finally {
+      setTemplateLoading(false);
     }
   };
 
@@ -258,6 +266,9 @@ export default function EmailConfigSection() {
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             </div>
+            {templateError && (
+              <p className="mt-1 text-xs text-red-600 dark:text-red-400">{templateError}</p>
+            )}
           </div>
         </div>
 
@@ -342,6 +353,9 @@ export default function EmailConfigSection() {
           <div className="flex items-center gap-2">
             <FileCode className="h-4 w-4 text-adm-text-tertiary" />
             <h3 className="text-sm font-semibold text-adm-text">邮件模板</h3>
+            {templateError && (
+              <p className="mt-1 text-xs text-red-600 dark:text-red-400">{templateError}</p>
+            )}
             {config.isDefaultTemplate && (
               <span className="rounded bg-adm-input px-1.5 py-0.5 text-[10px] text-adm-text-tertiary">
                 默认模板
@@ -370,10 +384,11 @@ export default function EmailConfigSection() {
               <button
                 type="button"
                 onClick={handleLoadDefault}
+                disabled={templateLoading}
                 className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-adm-text-secondary transition-colors hover:bg-adm-card-hover"
               >
                 <FileCode className="h-3 w-3" />
-                加载默认模板
+                {templateLoading ? "加载中..." : "加载默认模板"}
               </button>
             )}
           </div>

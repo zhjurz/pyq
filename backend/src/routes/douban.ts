@@ -2,7 +2,7 @@ import { Router, Request, Response } from "express";
 import axios from "axios";
 import { SiteSetting } from "../models";
 import { authenticate, requireAdmin, AuthRequest } from "../middleware/auth";
-import { getDoubanData, DoubanCollection, DoubanItem, syncDoubanData } from "../services/douban-service";
+import { getStoredDoubanData, DoubanCollection, DoubanItem, syncDoubanData } from "../services/douban-service";
 
 const router = Router();
 
@@ -135,6 +135,7 @@ router.get("/", async (req: Request, res: Response) => {
           statusCounts: { all: 0, collect: 0, do: 0, wish: 0 },
           syncedAt: "",
           syncStatus: "never",
+          dataState: "unconfigured",
           lastError: "",
           doubanId: "",
         });
@@ -145,6 +146,7 @@ router.get("/", async (req: Request, res: Response) => {
           music: [],
           syncedAt: "",
           syncStatus: "never",
+          dataState: "unconfigured",
           lastError: "",
           doubanId: "",
         });
@@ -152,7 +154,7 @@ router.get("/", async (req: Request, res: Response) => {
       return;
     }
 
-    const data = await getDoubanData(doubanId);
+    const data = await getStoredDoubanData(doubanId);
     const wrapped = wrapCollectionCovers(data);
 
     // 无 type 参数 → 返回全量（向后兼容）
@@ -207,6 +209,7 @@ router.get("/", async (req: Request, res: Response) => {
       statusCounts,
       syncedAt: wrapped.syncedAt,
       syncStatus: wrapped.syncStatus || "never",
+      dataState: wrapped.dataState,
       lastError: wrapped.lastError || "",
       doubanId: wrapped.doubanId,
     });
@@ -253,8 +256,8 @@ router.post(
   }
 );
 
-// POST /api/douban/cron-sync - protected scheduler endpoint
-router.post("/cron-sync", async (req: Request, res: Response) => {
+// GET /api/douban/cron-sync - protected daily scheduler endpoint
+const runCronSync = async (req: Request, res: Response) => {
   const expectedSecret = process.env.CRON_SECRET;
   const suppliedSecret = req.headers.authorization?.replace(/^Bearer\s+/i, "") || req.headers["x-cron-secret"];
   if (!expectedSecret || suppliedSecret !== expectedSecret) {
@@ -268,6 +271,7 @@ router.post("/cron-sync", async (req: Request, res: Response) => {
     return;
   }
   const data = await syncDoubanData(doubanId);
+  res.setHeader("Cache-Control", "no-store");
   res.status(data.syncStatus === "failed" ? 502 : 200).json({
     success: data.syncStatus !== "failed",
     syncStatus: data.syncStatus,
@@ -276,6 +280,8 @@ router.post("/cron-sync", async (req: Request, res: Response) => {
     music: data.music.length,
     lastError: data.lastError || "",
   });
-});
+};
+router.get("/cron-sync", runCronSync);
+router.post("/cron-sync", runCronSync);
 
 export default router;

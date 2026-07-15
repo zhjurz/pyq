@@ -130,7 +130,7 @@ DB_HOST=... DB_USER=... DB_PASSWORD=... DB_NAME=... npm run db:seed
 DB_HOST=... DB_USER=... DB_PASSWORD=... DB_NAME=... npm run db:migrate-douban-cache
 ```
 
-然后在 Vercel 环境变量中设置高强度 `CRON_SECRET`。`vercel.json` 中的每小时定时任务会以 `Authorization: Bearer $CRON_SECRET` 调用 `/api/douban/cron-sync`；若当前 Vercel 套餐不支持 Cron，请使用外部调度器以同一认证头调用该 endpoint。
+然后在 Vercel 环境变量中设置高强度 `CRON_SECRET`。`vercel.json` 中的**每日**定时任务会以 `Authorization: Bearer $CRON_SECRET` 对 `GET /api/douban/cron-sync` 发起请求；若当前 Vercel 套餐不支持 Cron，请使用外部调度器以同一认证头调用该 endpoint。首次上线后请在后台手动同步一次；公共影单请求只读取 TiDB 快照，绝不会实时抓取豆瓣。
 
 前端 `next.config.ts` 已经通过 `rewrites()` 把 `/api/*` 代理到 `BACKEND_URL`（同源代理，避免了跨域 Cookie 问题），部署到 Vercel 时只需要：
 

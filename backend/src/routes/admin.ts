@@ -303,7 +303,7 @@ router.put(
   [
     param("id").isUUID(),
     body("author").trim().isLength({ min: 1, max: 100 }),
-    body("email").trim().isEmail().normalizeEmail(),
+    body("email").optional({ checkFalsy: true }).trim().isEmail().normalizeEmail(),
     body("website").optional({ nullable: true }).trim().isLength({ max: 255 }),
     body("content").trim().isLength({ min: 1, max: 10000 }),
   ],
@@ -329,7 +329,7 @@ router.put(
 
     await comment.update({
       authorName: req.body.author.trim(),
-      email: req.body.email.trim().toLowerCase(),
+      email: req.body.email?.trim().toLowerCase() || "",
       website: req.body.website?.trim() || undefined,
       content: req.body.content.trim(),
     });

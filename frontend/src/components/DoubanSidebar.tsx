@@ -25,6 +25,9 @@ interface PaginatedDouban {
   typeCounts: { movie: number; book: number; music: number };
   statusCounts: { all: number; collect: number; do: number; wish: number };
   syncedAt: string;
+  syncStatus?: "never" | "success" | "partial" | "failed" | "running";
+  dataState?: "unconfigured" | "awaiting_first_sync" | "ready";
+  lastError?: string;
   doubanId: string;
 }
 
@@ -114,6 +117,9 @@ export default function DoubanSidebar({
   const [typeCounts, setTypeCounts] = useState<{ movie: number; book: number; music: number } | null>(null);
   const [statusCounts, setStatusCounts] = useState<{ all: number; collect: number; do: number; wish: number } | null>(null);
   const [syncedAt, setSyncedAt] = useState("");
+  const [syncStatus, setSyncStatus] = useState<PaginatedDouban["syncStatus"]>(undefined);
+  const [dataState, setDataState] = useState<PaginatedDouban["dataState"]>(undefined);
+  const [loadError, setLoadError] = useState("");
   const [activeTab, setActiveTab] = useState<Tab>("movie");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
@@ -144,6 +150,9 @@ export default function DoubanSidebar({
         setTypeCounts(d.typeCounts);
         setStatusCounts(d.statusCounts);
         setSyncedAt(d.syncedAt);
+        setSyncStatus(d.syncStatus);
+        setDataState(d.dataState);
+        setLoadError("");
         setHasMore(d.pagination.hasMore);
         setPage(d.pagination.page);
         setItems((prev) => [...prev, ...d.data]);
@@ -173,6 +182,9 @@ export default function DoubanSidebar({
         setTypeCounts(d.typeCounts);
         setStatusCounts(d.statusCounts);
         setSyncedAt(d.syncedAt);
+        setSyncStatus(d.syncStatus);
+        setDataState(d.dataState);
+        setLoadError("");
         setHasMore(d.pagination.hasMore);
         setPage(d.pagination.page);
         setItems(d.data);
@@ -190,6 +202,7 @@ export default function DoubanSidebar({
       })
       .catch((err) => {
         if (err?.name === "AbortError") return;
+        setLoadError("影单暂时无法读取，请稍后重试");
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
@@ -227,10 +240,20 @@ export default function DoubanSidebar({
     }
   }, [loading, totalCount, onDataStatus]);
 
+  const emptyMessage = dataState === "awaiting_first_sync"
+    ? "等待首次同步"
+    : dataState === "unconfigured"
+      ? "尚未配置豆瓣 ID"
+      : "暂无豆瓣数据";
+  const statusMessage = loadError || (syncStatus === "partial" || syncStatus === "failed"
+    ? "正在展示上次成功数据"
+    : "");
+
   const innerContent = isEmpty ? (
     <div className="flex flex-col items-center py-4 text-wechat-time">
       <Film className="mb-1 h-5 w-5" />
-      <p className="text-xs">暂无豆瓣数据</p>
+      <p className="text-xs">{emptyMessage}</p>
+      {statusMessage && <p className="mt-1 text-[10px] text-amber-600 dark:text-amber-400">{statusMessage}</p>}
     </div>
   ) : (
     <>

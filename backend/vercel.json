@@ -11,6 +11,6 @@
     }
   },
   "crons": [
-    { "path": "/api/douban/cron-sync", "schedule": "17 * * * *" }
+    { "path": "/api/douban/cron-sync", "schedule": "17 3 * * *" }
   ]
 }

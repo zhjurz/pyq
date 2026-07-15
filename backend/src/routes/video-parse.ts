@@ -22,12 +22,45 @@ export interface ParsedVideo {
   platform: string;
   sourceUrl: string;
   source: "parse";
+  /** public CDN 可直连；proxy 需要后端代理；source-page 仅跳转原平台 */
+  playback: "direct" | "proxy" | "source-page";
+}
+
+const DIRECT_PLAYBACK_SUFFIXES = ["yximgs.com", "ndcimgs.com"];
+
+function matchesHostSuffix(hostname: string, suffixes: string[]): boolean {
+  const host = hostname.toLowerCase().replace(/\.$/, "");
+  return suffixes.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
+}
+
+function directPlaybackFor(url: string): boolean {
+  try {
+    return matchesHostSuffix(new URL(url).hostname, DIRECT_PLAYBACK_SUFFIXES);
+  } catch {
+    return false;
+  }
+}
+
+function sourcePageFallback(url: string): ParsedVideo | null {
+  const platform = inferPlatform(url);
+  if (platform !== "weibo" && platform !== "xhs") return null;
+  const platformName = platform === "weibo" ? "微博" : "小红书";
+  return {
+    url: "",
+    cover: "",
+    title: `请在${platformName}打开原视频`,
+    author: "",
+    platform,
+    sourceUrl: url,
+    source: "parse",
+    playback: "source-page",
+  };
 }
 
 const VIDEO_HOST_SUFFIXES = [
   "douyin.com", "douyinvod.com", "snssdk.com", "bytecdntp.com", "bytecdn.com", "aweme.com",
   "zjcdn.com", "bytegoofy.com", "pstatp.com", "ixigua.com", "byteimg.com", "douyinpic.com", "byteoss.com",
-  "kuaishou.com", "kwaicdn.com", "chenzhongtech.com", "yximgs.com",
+  "kuaishou.com", "kwaicdn.com", "chenzhongtech.com", "yximgs.com", "ndcimgs.com",
   "xiaohongshu.com", "xhslink.com", "xhscdn.com", "weibo.com", "weibo.cn", "sinacn.com", "sinaimg.cn",
   "hdslb.com", "bilivideo.com", "bugpk.com",
 ];
@@ -57,7 +90,7 @@ function inferReferer(hostname: string): string {
   const h = hostname.toLowerCase();
   // 抖音/字节系：douyinvod, bytecdntp, bytecdn, aweme, snssdk, zjcdn, bytegoofy, pstatp, ixigua, byteimg, douyinpic
   if (/douyin|douyinvod|snssdk|bytecdntp|bytecdn|aweme|zjcdn|bytegoofy|pstatp|ixigua|byteimg|douyinpic|byteoss/.test(h)) return "https://www.douyin.com";
-  if (/kuaishou|kwaicdn|chenzhongtech|yximgs/.test(h)) return "https://www.kuaishou.com";
+  if (/kuaishou|kwaicdn|chenzhongtech|yximgs|ndcimgs/.test(h)) return "https://www.kuaishou.com";
   if (/xhs|xhscdn|xiaohongshu/.test(h)) return "https://www.xiaohongshu.com";
   if (/weibo|sinacn|sinaimg/.test(h)) return "https://weibo.com";
   return "";
@@ -161,6 +194,8 @@ export async function parseVideoFromUrl(url: string): Promise<ParsedVideo> {
       },
     });
   } catch (err: any) {
+    const fallback = sourcePageFallback(url);
+    if (fallback) return fallback;
     if (err?.code === "ECONNABORTED") {
       throw new ParseError(504, "解析超时，请稍后重试");
     }
@@ -170,6 +205,8 @@ export async function parseVideoFromUrl(url: string): Promise<ParsedVideo> {
   const data = resp.data;
   const inner = data?.data;
   if (data?.code !== 200 || !inner?.url) {
+    const fallback = sourcePageFallback(url);
+    if (fallback) return fallback;
     throw new ParseError(422, data?.msg || "解析失败，请检查链接或稍后重试");
   }
 
@@ -196,6 +233,7 @@ export async function parseVideoFromUrl(url: string): Promise<ParsedVideo> {
     platform: inferPlatform(url),
     sourceUrl: url,
     source: "parse",
+    playback: directPlaybackFor(selectBestVideoUrl(inner)) ? "direct" : "proxy",
   };
 }
 
@@ -347,7 +385,7 @@ router.get("/proxy", async (req: Request, res: Response) => {
     if (contentLength) res.setHeader("Content-Length", String(contentLength));
     if (contentRange) res.setHeader("Content-Range", String(contentRange));
     res.setHeader("Accept-Ranges", "bytes");
-    res.setHeader("Cache-Control", "public, max-age=86400");
+    res.setHeader("Cache-Control", "private, no-store");
 
     const destroyUpstream = () => {
       if (!resp.data.destroyed) resp.data.destroy();

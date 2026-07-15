@@ -107,7 +107,10 @@ export default function AdminComments() {
         setEditingId(null);
       } else {
         const data = await res.json().catch(() => ({}));
-        alert(data.message || "保存失败，请重试");
+        const validationMessage = Array.isArray(data.errors)
+          ? data.errors[0]?.msg || data.errors[0]?.path
+          : "";
+        alert(data.message || validationMessage || `保存失败（${res.status}）`);
       }
     } catch {
       alert("网络错误，请重试");
