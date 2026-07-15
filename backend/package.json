@@ -11,8 +11,7 @@
     "db:sync": "ts-node src/scripts/sync.ts",
     "db:reset-likes": "ts-node src/scripts/reset-likes.ts",
     "db:migrate-douban-cache": "ts-node src/scripts/migrate-douban-cache.ts",
-    "music:migrate-r2": "ts-node src/scripts/migrate-r2-music.ts",
-    "postinstall": "node src/scripts/patch-parseurl.js"
+    "music:migrate-r2": "ts-node src/scripts/migrate-r2-music.ts"
   },
   "keywords": [],
   "author": "",
