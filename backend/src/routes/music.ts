@@ -1,643 +1,249 @@
-/**
- * 音乐路由
- * 基于 MusicFree 插件系统（music-sources/mf-* 模块）。
- * 由后台安装的 MusicFree 插件提供搜索/播放/歌词/歌单/详情等能力；
- * 播放地址由 /stream 端点代理转发，并支持插件返回的防盗链请求头。
- */
 import { Router, Request, Response } from "express";
-import http from "http";
-import https from "https";
-import { SiteSetting } from "../models";
-import { siteSettingTextDefaults } from "../models/SiteSetting";
-import { authenticate, AuthRequest } from "../middleware/auth";
-import { getSource, listSources, normalizePlatform } from "../music-sources";
-import { ensurePluginsFresh } from "../music-sources/mf-manager";
-import type { MusicItem, Quality } from "../music-sources/types";
+import { Op } from "sequelize";
+import { Media, MusicPlaylist, MusicTrack, SiteSetting, sequelize } from "../models";
+import { authenticate, requireAdmin, AuthRequest } from "../middleware/auth";
 
 const router = Router();
+const DEFAULT_PLAYLIST_SLUG = "site-default";
 
-// 每个请求前确保插件注册表未超过 TTL 地陈旧（见 mf-manager.ts 顶部注释）。
-// 同一函数实例在 TTL 窗口内直接复用内存缓存，不会每个请求都查数据库。
-router.use(async (_req, _res, next) => {
-  try {
-    await ensurePluginsFresh();
-  } catch (err) {
-    console.error("[music] ensurePluginsFresh failed:", (err as Error).message);
-  }
-  next();
-});
-
-/**
- * 解析 LRC 歌词字符串为 {timeMs, text} 列表。
- * 供前端 TopBar 同步显示用。
- */
-export function parseLyric(lrc: string): { timeMs: number; text: string }[] | null {
-  if (!lrc) return null;
-  const lines = lrc.split("\n");
-  const parsed: { timeMs: number; text: string }[] = [];
-  const timeRegex = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/g;
-
-  for (const line of lines) {
-    const times: number[] = [];
-    let match;
-    while ((match = timeRegex.exec(line)) !== null) {
-      const min = Number(match[1]);
-      const sec = Number(match[2]);
-      const msRaw = match[3];
-      const ms = msRaw.length === 2 ? Number(msRaw) * 10 : Number(msRaw);
-      times.push(min * 60 * 1000 + sec * 1000 + ms);
-    }
-    if (times.length === 0) continue;
-    const text = line.replace(/\[\d{2}:\d{2}\.\d{2,3}\]/g, "").trim();
-    for (const timeMs of times) {
-      parsed.push({ timeMs, text });
-    }
-  }
-
-  if (parsed.length === 0) return null;
-  parsed.sort((a, b) => a.timeMs - b.timeMs);
-  return parsed;
-}
-
-async function ensureSetting() {
-  const [setting] = await SiteSetting.findOrCreate({
-    where: { id: 1 },
-    defaults: { id: 1, ...siteSettingTextDefaults },
+async function getDefaultPlaylist() {
+  const [playlist] = await MusicPlaylist.findOrCreate({
+    where: { slug: DEFAULT_PLAYLIST_SLUG },
+    defaults: { slug: DEFAULT_PLAYLIST_SLUG, name: "网站歌单" },
   });
-  return setting;
+  return playlist;
 }
 
-/** 简单 URL 安全校验：仅允许 http/https，禁止 file/ftp/internal metadata */
-function isSafeUrl(url: string): boolean {
-  if (!url) return false;
-  try {
-    const u = new URL(url);
-    return u.protocol === "http:" || u.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
-/**
- * 预留的查询参数名，不会被当作音源字段透传。
- * 其余 query 参数全部视为音源特定字段（songmid/hash/bvid/cid ...），
- * 透传给音源 getStreamUrl/getLyric/getInfo。
- */
-const RESERVED_QUERY = new Set(["platform", "id", "quality", "url", "refresh"]);
-
-/**
- * 从请求 query 构造 MusicItem，透传所有音源特定字段。
- */
-function buildMusicItem(
-  platform: string,
-  id: string,
-  query: Record<string, any>
-): MusicItem {
-  const item: MusicItem = { id: String(id), platform };
-  for (const [k, v] of Object.entries(query)) {
-    if (RESERVED_QUERY.has(k)) continue;
-    if (typeof v === "string" && v) {
-      item[k] = v;
-    }
-  }
-  return item;
-}
-
-/** IMusicItem 上的标准字段（非音源特定）。其余字段视为音源特定，需透传。 */
-const STANDARD_FIELDS = new Set([
-  "id",
-  "platform",
-  "title",
-  "artist",
-  "album",
-  "artwork",
-  "url",
-  "lrc",
-  "rawLrc",
-  "duration",
-]);
-
-/** 从 MusicItem 提取所有音源特定字段（songmid/hash/bvid/cid 等）。
- *  只保留原始类型（string/number/boolean），跳过对象/数组，避免 URL 中出现 [object Object]。 */
-function extractExtraFields(track: MusicItem): Record<string, any> {
-  const extra: Record<string, any> = {};
-  for (const [k, v] of Object.entries(track)) {
-    if (STANDARD_FIELDS.has(k)) continue;
-    if (v == null || v === "") continue;
-    const t = typeof v;
-    if (t === "string" || t === "number" || t === "boolean") {
-      extra[k] = v;
-    }
-  }
-  return extra;
-}
-
-/** 流式代理 URL（仅非 Vercel 且显式开启 ALLOW_AUDIO_PROXY 时的兼容路径）。 */
-function toStreamUrl(
-  platform: string,
-  id: string,
-  extra?: Record<string, any>
-): string {
-  const params = new URLSearchParams({
-    platform: String(platform),
-    id: String(id),
-  });
-  if (extra) {
-    for (const [k, v] of Object.entries(extra)) {
-      if (v != null && v !== "") {
-        params.set(k, String(v));
-      }
-    }
-  }
-  return `/api/music/stream?${params.toString()}`;
-}
-
-function serializePlaylistTrack(track: MusicItem, platform: string) {
+function serializeTrack(track: MusicTrack & { audio?: Media; cover?: Media }) {
+  const audio = track.audio;
+  const cover = track.cover;
   return {
-    id: String(track.id || ""),
-    name: track.title || "音乐",
-    artist: track.artist || "",
-    cover: track.artwork || "",
-    // 歌单接口只返回描述信息；实际播放在用户选中该曲目时通过 /resolve 按需解析。
-    mp3url: "",
-    lyric: track.rawLrc || track.lrc || "",
-    platform,
-    extra: extractExtraFields(track),
+    id: track.id,
+    audioMediaId: track.audioMediaId,
+    coverMediaId: track.coverMediaId,
+    name: track.title,
+    title: track.title,
+    artist: track.artist,
+    mp3url: audio?.url || "",
+    audioUrl: audio?.url || "",
+    cover: cover?.url || "",
+    lrc: track.lrc,
+    lyric: track.lrc,
+    sortOrder: track.sortOrder,
   };
 }
 
-interface DirectResolution {
-  playable: boolean;
-  mode: "direct" | "unsupported";
-  url?: string;
-  reason?: "no-url" | "headers-required" | "unsafe-url";
-}
-
-interface CacheEntry {
-  resolution: DirectResolution;
-  expireAt: number;
-}
-const mediaCache = new Map<string, CacheEntry>();
-const CACHE_TTL = 5 * 60 * 1000;
-
-function getResolutionCache(key: string): DirectResolution | null {
-  const entry = mediaCache.get(key);
-  if (!entry) return null;
-  if (Date.now() > entry.expireAt) {
-    mediaCache.delete(key);
-    return null;
-  }
-  return entry.resolution;
-}
-
-function setResolutionCache(key: string, resolution: DirectResolution): void {
-  mediaCache.set(key, { resolution, expireAt: Date.now() + CACHE_TTL });
-}
-
-function directUrl(url: string): string | null {
-  if (!isSafeUrl(url)) return null;
-  try {
-    const parsed = new URL(url);
-    // HTTPS 页面不可播放 HTTP 混合内容；常见音源域名支持 HTTPS 时优先升级。
-    if (parsed.protocol === "http:") parsed.protocol = "https:";
-    return parsed.toString();
-  } catch {
-    return null;
-  }
-}
-
-async function resolveDirectMedia(
-  source: ReturnType<typeof getSource>,
-  item: MusicItem,
-  quality: Quality,
-  refresh = false
-): Promise<DirectResolution> {
-  if (!source) return { playable: false, mode: "unsupported", reason: "no-url" };
-  const extras = extractExtraFields(item);
-  const cacheKey = `${source.code}:${item.id}:${quality}:${JSON.stringify(extras)}`;
-  if (!refresh) {
-    const cached = getResolutionCache(cacheKey);
-    if (cached) return cached;
-  }
-
-  try {
-    const result = await source.getStreamUrl(item, quality);
-    const hasHeaders = !!result?.userAgent || Object.keys(result?.headers || {}).length > 0;
-    const url = result?.url ? directUrl(result.url) : null;
-    const resolution: DirectResolution = hasHeaders
-      ? { playable: false, mode: "unsupported", reason: "headers-required" }
-      : url
-        ? { playable: true, mode: "direct", url }
-        : { playable: false, mode: "unsupported", reason: result?.url ? "unsafe-url" : "no-url" };
-    setResolutionCache(cacheKey, resolution);
-    return resolution;
-  } catch (err) {
-    console.error("[music] direct resolve error:", err);
-    return { playable: false, mode: "unsupported", reason: "no-url" };
-  }
-}
-
-// GET /api/music/sources — 列出所有内嵌音源（前端 PublishModal 用）
-router.get("/sources", async (_req: Request, res: Response) => {
-  res.json(
-    listSources().map((s) => ({
-      platform: s.code,
-      name: s.name,
-      primaryKey: s.primaryKey,
-    }))
-  );
-});
-
-// GET /api/music/search — 搜索歌曲（需登录）
-router.get("/search", authenticate, async (req: AuthRequest, res: Response) => {
-  try {
-    const platform = String(req.query.platform || "");
-    const keyword = String(req.query.keyword || "");
-    const page = Math.max(1, Number(req.query.page) || 1);
-    const type = String(req.query.type || "music");
-
-    if (!platform || !keyword) {
-      res.status(400).json({ message: "请提供 platform 和 keyword 参数" });
-      return;
-    }
-
-    const source = getSource(platform);
-    if (!source) {
-      res.status(404).json({ message: "未找到对应音源" });
-      return;
-    }
-
-    const result = await source.search(keyword, page, type);
-    const data = (result?.data || []).map((m) => ({
-      ...m,
-      platform: source.code,
-    }));
-    res.json({ isEnd: result?.isEnd ?? true, data });
-  } catch (err) {
-    console.error("[music] search error:", err);
-    res.status(500).json({ message: "搜索失败" });
-  }
-});
-
-// GET /api/music/lyric — 获取歌词（公开，播放时调用）
-router.get("/lyric", async (req: Request, res: Response) => {
-  try {
-    const platform = String(req.query.platform || "");
-    const id = String(req.query.id || "");
-    if (!platform || !id) {
-      res.status(400).json({ message: "请提供 platform 和 id 参数" });
-      return;
-    }
-
-    const source = getSource(platform);
-    if (!source) {
-      res.status(404).json({ message: "未找到对应音源" });
-      return;
-    }
-
-    const musicItem = buildMusicItem(source.code, id, req.query);
-    const result = await source.getLyric(musicItem);
-    res.json({
-      rawLrc: result?.rawLrc || "",
-      translation: result?.translation || "",
-    });
-  } catch (err) {
-    // 歌词失败不阻断播放
-    console.error("[music] lyric error:", err);
-    res.json({ rawLrc: "", translation: "" });
-  }
-});
-
-// POST /api/music/import-sheet — 导入歌单（需登录）
-router.post("/import-sheet", authenticate, async (req: AuthRequest, res: Response) => {
-  try {
-    const { url, platform } = req.body;
-    if (!url || !platform) {
-      res.status(400).json({ message: "请提供 url 和 platform" });
-      return;
-    }
-
-    const source = getSource(String(platform));
-    if (!source) {
-      res.status(404).json({ message: "未找到对应音源" });
-      return;
-    }
-
-    const tracks = await source.importPlaylist(String(url));
-    const data = (tracks || []).map((m) => ({ ...m, platform: source.code }));
-    res.json({ data });
-  } catch (err) {
-    console.error("[music] import-sheet error:", err);
-    res.status(500).json({ message: "导入歌单失败" });
-  }
-});
-
-// GET /api/music/resolve — 仅解析直连播放地址，不代理任何音频字节
-router.get("/resolve", async (req: Request, res: Response) => {
-  const platform = String(req.query.platform || "");
-  const id = String(req.query.id || "");
-  const quality = String(req.query.quality || "standard") as Quality;
-  if (!platform || !id) {
-    res.status(400).json({ message: "请提供 platform 和 id 参数" });
-    return;
-  }
-  const source = getSource(platform);
-  if (!source) {
-    res.status(404).json({ message: "未找到对应音源" });
-    return;
-  }
-  const item = buildMusicItem(source.code, id, req.query);
-  const resolution = await resolveDirectMedia(source, item, quality, req.query.refresh === "1");
-  res.json({ ...resolution, platform: source.code, id });
-});
-
-// GET /api/music/stream — 仅供非 Vercel 的显式兼容部署使用。
-// Vercel 生产环境严禁音频经过函数，前端应使用 /api/music/resolve 返回的直链。
-router.get("/stream", async (req: Request, res: Response) => {
-  if (process.env.VERCEL || process.env.ALLOW_AUDIO_PROXY !== "true") {
-    res.status(410).json({ message: "当前部署禁止音频代理，请使用直连音源" });
-    return;
-  }
-  const platform = String(req.query.platform || "");
-  const id = String(req.query.id || "");
-  const quality: Quality = (String(req.query.quality || "standard") as Quality);
-  const directUrl = String(req.query.url || "");
-
-  let targetUrl = "";
-  let headers: Record<string, string> = {};
-
-  if (platform && id) {
-    const source = getSource(platform);
-    if (!source) {
-      res.status(404).json({ message: "未找到对应音源" });
-      return;
-    }
-
-    const musicItem = buildMusicItem(source.code, id, req.query);
-    const resolution = await resolveDirectMedia(source, musicItem, quality);
-    if (!resolution.playable || !resolution.url) {
-      res.status(404).json({ message: "该音源无法通过直连方式播放" });
-      return;
-    }
-    targetUrl = resolution.url;
-  } else if (directUrl) {
-    targetUrl = directUrl;
-    headers["User-Agent"] =
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
-  } else {
-    res.status(400).json({ message: "缺少 platform+id 或 url 参数" });
-    return;
-  }
-
-  if (!isSafeUrl(targetUrl)) {
-    res.status(403).json({ message: "不允许的目标地址" });
-    return;
-  }
-
-  let parsed: URL;
-  try {
-    parsed = new URL(targetUrl);
-  } catch {
-    res.status(400).json({ message: "无效的 URL" });
-    return;
-  }
-
-  const requestModule = parsed.protocol === "https:" ? https : http;
-  if (req.headers.range) {
-    headers["Range"] = req.headers.range;
-  }
-
-  const proxyReq = requestModule.request(
-    parsed,
-    { method: "GET", headers },
-    (proxyRes) => {
-      res.status(proxyRes.statusCode || 200);
-      const headersToForward = [
-        "content-length",
-        "content-range",
-        "accept-ranges",
-        "cache-control",
-      ];
-      for (const h of headersToForward) {
-        const val = proxyRes.headers[h];
-        if (val) res.setHeader(h, val);
-      }
-      // 上游可能返回非音频 content-type（如 application/x-www-form-urlencoded），
-      // 浏览器 <audio> 会拒绝播放。强制设为 audio/mpeg。
-      const ct = proxyRes.headers["content-type"];
-      if (ct && (ct.startsWith("audio/") || ct.startsWith("video/"))) {
-        res.setHeader("content-type", ct);
-      } else {
-        res.setHeader("content-type", "audio/mpeg");
-      }
-      proxyRes.pipe(res);
-    }
-  );
-
-  proxyReq.on("error", (err) => {
-    console.error("[music] stream proxy error:", err);
-    if (!res.headersSent) {
-      res.status(502).json({ message: "音频代理失败" });
-    }
+async function loadDefaultPlaylist() {
+  const playlist = await getDefaultPlaylist();
+  const tracks = await MusicTrack.findAll({
+    where: { playlistId: playlist.id },
+    include: [
+      { model: Media, as: "audio", required: true },
+      { model: Media, as: "cover", required: false },
+    ],
+    order: [["sortOrder", "ASC"], ["createdAt", "ASC"]],
   });
+  return { playlist, tracks: tracks as Array<MusicTrack & { audio?: Media; cover?: Media }> };
+}
 
-  proxyReq.end();
-});
+async function getOwnedMedia(id: unknown, userId: string, category: "audio" | "image") {
+  if (typeof id !== "string") return null;
+  const media = await Media.findOne({ where: { id, uploaderId: userId, storageType: "r2" } });
+  if (!media || !media.mimeType.startsWith(`${category}/`)) return null;
+  return media;
+}
 
-// GET /api/music — 顶栏背景音乐
-// 优先级：playlistId(importPlaylist) > musicId(getStreamUrl+元数据) > musicUrl(直链)
+function readText(value: unknown, field: string, maxLength: number, required = false) {
+  if (value == null && !required) return undefined;
+  if (typeof value !== "string") throw new Error(`${field} 格式无效`);
+  const text = value.trim();
+  if (required && !text) throw new Error(`${field} 不能为空`);
+  if (text.length > maxLength) throw new Error(`${field} 过长`);
+  return text;
+}
+
+// GET /api/music — public R2-only background playlist.
 router.get("/", async (_req: Request, res: Response) => {
   try {
-    const setting = await ensureSetting();
-    const category = setting.musicSource || "wy";
-    const source = getSource(category);
-
-    // 无可用音源时回退到自定义 URL
-    if (!source) {
-      if (setting.musicUrl) {
-        res.json({
-          name: "音乐",
-          mp3url: setting.musicUrl,
-          cover: "",
-          author: "",
-          lyric: "",
-        });
-        return;
-      }
-      res.json({ name: "", mp3url: "", cover: "", author: "", lyric: "" });
-      return;
-    }
-
-    // 优先级 1：playlistId — 导入歌单
-    if (setting.playlistId) {
-      try {
-        const tracks = await source.importPlaylist(setting.playlistId);
-        if (tracks && tracks.length > 0) {
-          const first = tracks[0];
-          const playlist = tracks.map((track) => serializePlaylistTrack(track, source.code));
-          res.json({
-            name: first.title || "音乐",
-            // 直连 URL 具有时效且部分音源需要浏览器无法附加的请求头，
-            // 因而歌单仅返回元数据，前端在用户选歌时调用 /resolve。
-            mp3url: "",
-            cover: first.artwork || "",
-            author: first.artist || "",
-            lyric: first.rawLrc || first.lrc || "",
-            id: String(first.id),
-            platform: source.code,
-            extra: extractExtraFields(first),
-            playlist,
-            currentIndex: 0,
-          });
-          return;
-        }
-      } catch (err) {
-        console.error("[music] importPlaylist error:", err);
-        // fall through to musicId
-      }
-    }
-
-    // 优先级 2：musicId — 单曲
-    if (setting.musicId) {
-      try {
-        const musicItem: MusicItem = { id: setting.musicId, platform: source.code };
-        const [resolution, info, lyricResult] = await Promise.all([
-          resolveDirectMedia(source, musicItem, "standard"),
-          source.getInfo(musicItem).catch(() => ({})),
-          source.getLyric(musicItem).catch(() => ({ rawLrc: "" })),
-        ]);
-
-        if (resolution.playable && resolution.url) {
-          res.json({
-            name: (info as any)?.title || "",
-            mp3url: resolution.url,
-            playable: true,
-            cover: (info as any)?.artwork || "",
-            author: (info as any)?.artist || "",
-            lyric: (lyricResult as any)?.rawLrc || "",
-            id: setting.musicId,
-          });
-          return;
-        }
-      } catch (err) {
-        console.error("[music] musicId resolve error:", err);
-        // fall through to musicUrl
-      }
-    }
-
-    // 优先级 3：自定义 URL
-    if (setting.musicUrl) {
-      res.json({
-        name: "音乐",
-        mp3url: setting.musicUrl,
-        cover: "",
-        author: "",
-        lyric: "",
-      });
-      return;
-    }
-
-    res.json({ name: "", mp3url: "", cover: "", author: "", lyric: "" });
-  } catch (err) {
-    console.error("[music] GET / error:", err);
-    try {
-      const setting = await ensureSetting();
-      if (setting.musicUrl) {
-        res.json({
-          name: "音乐",
-          mp3url: setting.musicUrl,
-          cover: "",
-          author: "",
-          lyric: "",
-        });
-        return;
-      }
-    } catch {
-      // ignore
-    }
-    res.status(500).json({ message: "获取音乐失败" });
-  }
-});
-
-// POST /api/music/preview — 预览歌曲（博主发动态/设置页用）
-// body: { id, platform?, extra?, title?, artist?, artwork?, album? }
-// 无 platform 时走 wy（旧数据兼容）
-router.post("/preview", authenticate, async (req: AuthRequest, res: Response) => {
-  try {
-    const { id, platform, extra, title, artist, artwork, album } = req.body;
-    if (!id) {
-      res.status(400).json({ message: "请提供歌曲 ID" });
-      return;
-    }
-
-    const code = platform ? normalizePlatform(String(platform)) : "wy";
-    const source = getSource(code);
-    if (!source) {
-      res.status(404).json({ message: "未找到可用音源" });
-      return;
-    }
-
-    // 透传所有音源特定字段 + 搜索结果元数据（title/artist/artwork 作为 getInfo 回退）
-    const musicItem: MusicItem = {
-      id: String(id),
-      platform: source.code,
-      ...(title ? { title: String(title) } : {}),
-      ...(artist ? { artist: String(artist) } : {}),
-      ...(artwork ? { artwork: String(artwork) } : {}),
-      ...(album ? { album: String(album) } : {}),
-      ...(extra && typeof extra === "object" ? extra : {}),
-    };
-
-    const [info, lyricResult, resolution] = await Promise.all([
-      source.getInfo(musicItem).catch(() => ({})),
-      source.getLyric(musicItem).catch(() => ({ rawLrc: "" })),
-      resolveDirectMedia(source, musicItem, "standard"),
-    ]);
-
-    const resultExtra = extractExtraFields(musicItem);
-
+    const { playlist, tracks } = await loadDefaultPlaylist();
+    const data = tracks.map(serializeTrack).filter((track) => track.mp3url);
+    const first = data[0];
+    const [setting] = await SiteSetting.findOrCreate({ where: { id: 1 }, defaults: { id: 1, backgroundImages: "[]", emailTemplate: "", socialLinks: "[]" } });
     res.json({
-      name: (info as any)?.title || title || "",
-      author: (info as any)?.artist || artist || "",
-      cover: (info as any)?.artwork || artwork || "",
-      mp3url: resolution.url || "",
-      lyric: (lyricResult as any)?.rawLrc || "",
-      tlyric: (lyricResult as any)?.translation || "",
-      playable: resolution.playable,
-      playbackMode: resolution.mode,
-      reason: resolution.reason,
-      platform: source.code,
-      musicId: String(id),
-      extra: resultExtra,
+      id: playlist.id,
+      name: first?.name || "",
+      author: first?.artist || "",
+      cover: first?.cover || "",
+      mp3url: first?.mp3url || "",
+      lyric: first?.lyric || "",
+      playlist: data,
+      currentIndex: 0,
+      musicAutoplay: setting.musicAutoplay,
     });
   } catch (err) {
-    console.error("[music] preview error:", err);
-    res.status(500).json({ message: "获取歌曲失败" });
-  }
-});
-
-// GET /api/music/playlist — 通过音源导入歌单（旧前端调用兼容）
-router.get("/playlist", authenticate, async (req: AuthRequest, res: Response) => {
-  try {
-    const id = String(req.query.id || "").trim();
-    const platform = String(req.query.platform || "");
-    if (!id) {
-      res.status(400).json({ message: "请提供歌单 ID" });
-      return;
-    }
-
-    const source = platform ? getSource(platform) : getSource("wy");
-    if (!source) {
-      res.status(404).json({ message: "未找到对应音源" });
-      return;
-    }
-
-    const tracks = await source.importPlaylist(id);
-    res.json({ tracks: (tracks || []).map((track) => serializePlaylistTrack(track, source.code)) });
-  } catch (err) {
-    console.error("[music] playlist error:", err);
+    console.error("[music] get playlist error:", err);
     res.status(500).json({ message: "获取歌单失败" });
   }
 });
+
+// GET /api/music/admin — full editable default playlist.
+router.get("/admin", authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  try {
+    const [{ playlist, tracks }, setting] = await Promise.all([
+      loadDefaultPlaylist(),
+      SiteSetting.findOrCreate({ where: { id: 1 }, defaults: { id: 1, backgroundImages: "[]", emailTemplate: "", socialLinks: "[]" } }).then(([item]) => item),
+    ]);
+    res.json({ id: playlist.id, name: playlist.name, tracks: tracks.map(serializeTrack), musicAutoplay: setting.musicAutoplay });
+  } catch (err) {
+    console.error("[music] get admin playlist error:", err);
+    res.status(500).json({ message: "获取歌单失败" });
+  }
+});
+
+// PUT /api/music/admin — rename the default playlist or change autoplay.
+router.put("/admin", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const name = req.body?.name === undefined ? undefined : readText(req.body.name, "歌单名称", 100, true);
+    if (req.body?.musicAutoplay !== undefined && typeof req.body.musicAutoplay !== "boolean") throw new Error("自动播放设置格式无效");
+    const [playlist, setting] = await Promise.all([
+      getDefaultPlaylist(),
+      SiteSetting.findOrCreate({ where: { id: 1 }, defaults: { id: 1, backgroundImages: "[]", emailTemplate: "", socialLinks: "[]" } }).then(([item]) => item),
+    ]);
+    if (name !== undefined) await playlist.update({ name });
+    if (req.body?.musicAutoplay !== undefined) await setting.update({ musicAutoplay: req.body.musicAutoplay });
+    res.json({ id: playlist.id, name: playlist.name, musicAutoplay: setting.musicAutoplay });
+  } catch (err: any) {
+    res.status(400).json({ message: err.message || "更新歌单失败" });
+  }
+});
+
+// POST /api/music/admin/tracks — attach existing R2 media as a playlist item.
+router.post("/admin/tracks", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const audio = await getOwnedMedia(req.body?.audioMediaId, req.user!.id, "audio");
+    if (!audio) {
+      res.status(400).json({ message: "请选择本人上传的 R2 音频文件" });
+      return;
+    }
+    const coverMediaId = req.body?.coverMediaId;
+    const cover = coverMediaId == null || coverMediaId === "" ? null : await getOwnedMedia(coverMediaId, req.user!.id, "image");
+    if (coverMediaId && !cover) {
+      res.status(400).json({ message: "封面必须是本人上传的 R2 图片" });
+      return;
+    }
+    const title = readText(req.body?.title, "歌曲名称", 255, false) || audio.filename.replace(/\.[^.]+$/, "") || "未命名歌曲";
+    const artist = readText(req.body?.artist, "歌手", 255, false) || "";
+    const lrc = readText(req.body?.lrc, "歌词", 100_000, false) || "";
+    const playlist = await getDefaultPlaylist();
+    const maxOrder = await MusicTrack.max("sortOrder", { where: { playlistId: playlist.id } });
+    const track = await MusicTrack.create({
+      playlistId: playlist.id,
+      audioMediaId: audio.id,
+      coverMediaId: cover?.id || null,
+      title,
+      artist,
+      lrc,
+      sortOrder: Number.isFinite(maxOrder) ? Number(maxOrder) + 1 : 0,
+    });
+    const full = await MusicTrack.findByPk(track.id, {
+      include: [{ model: Media, as: "audio" }, { model: Media, as: "cover", required: false }],
+    });
+    res.status(201).json(serializeTrack(full as MusicTrack & { audio?: Media; cover?: Media }));
+  } catch (err: any) {
+    res.status(400).json({ message: err.message || "添加歌曲失败" });
+  }
+});
+
+// PATCH /api/music/admin/tracks/:id — update playlist metadata or replace owned R2 media.
+router.patch("/admin/tracks/:id", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const playlist = await getDefaultPlaylist();
+    const track = await MusicTrack.findOne({ where: { id: String(req.params.id), playlistId: playlist.id } });
+    if (!track) {
+      res.status(404).json({ message: "歌曲不存在" });
+      return;
+    }
+    const updates: Partial<Pick<MusicTrack, "audioMediaId" | "coverMediaId" | "title" | "artist" | "lrc">> = {};
+    if (req.body?.audioMediaId !== undefined) {
+      const audio = await getOwnedMedia(req.body.audioMediaId, req.user!.id, "audio");
+      if (!audio) {
+        res.status(400).json({ message: "请选择本人上传的 R2 音频文件" });
+        return;
+      }
+      updates.audioMediaId = audio.id;
+    }
+    if (req.body?.coverMediaId !== undefined) {
+      if (!req.body.coverMediaId) updates.coverMediaId = null;
+      else {
+        const cover = await getOwnedMedia(req.body.coverMediaId, req.user!.id, "image");
+        if (!cover) {
+          res.status(400).json({ message: "封面必须是本人上传的 R2 图片" });
+          return;
+        }
+        updates.coverMediaId = cover.id;
+      }
+    }
+    const title = readText(req.body?.title, "歌曲名称", 255);
+    const artist = readText(req.body?.artist, "歌手", 255);
+    const lrc = readText(req.body?.lrc, "歌词", 100_000);
+    if (title !== undefined) updates.title = title || "未命名歌曲";
+    if (artist !== undefined) updates.artist = artist;
+    if (lrc !== undefined) updates.lrc = lrc;
+    await track.update(updates);
+    const full = await MusicTrack.findByPk(track.id, {
+      include: [{ model: Media, as: "audio" }, { model: Media, as: "cover", required: false }],
+    });
+    res.json(serializeTrack(full as MusicTrack & { audio?: Media; cover?: Media }));
+  } catch (err: any) {
+    res.status(400).json({ message: err.message || "更新歌曲失败" });
+  }
+});
+
+// PUT /api/music/admin/order — accept an exact ordered permutation of the current track IDs.
+router.put("/admin/order", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  const ids = req.body?.trackIds;
+  if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string")) {
+    res.status(400).json({ message: "trackIds 必须是歌曲 ID 数组" });
+    return;
+  }
+  const transaction = await sequelize.transaction();
+  try {
+    const playlist = await getDefaultPlaylist();
+    const tracks = await MusicTrack.findAll({ where: { playlistId: playlist.id }, transaction, lock: transaction.LOCK.UPDATE });
+    const existing = new Set(tracks.map((track) => track.id));
+    if (ids.length !== tracks.length || new Set(ids).size !== ids.length || ids.some((id) => !existing.has(id))) {
+      await transaction.rollback();
+      res.status(400).json({ message: "排序列表必须包含当前歌单中的全部歌曲且不能重复" });
+      return;
+    }
+    // Avoid the unique (playlist_id, sort_order) index while swapping positions.
+    await Promise.all(tracks.map((track, index) => track.update({ sortOrder: -1 - index }, { transaction })));
+    await Promise.all(ids.map((id, index) => MusicTrack.update({ sortOrder: index }, { where: { id }, transaction })));
+    await transaction.commit();
+    res.json({ success: true });
+  } catch (err) {
+    await transaction.rollback();
+    console.error("[music] reorder error:", err);
+    res.status(500).json({ message: "保存排序失败" });
+  }
+});
+
+router.delete("/admin/tracks/:id", authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  const playlist = await getDefaultPlaylist();
+  const track = await MusicTrack.findOne({ where: { id: String(req.params.id), playlistId: playlist.id } });
+  if (!track) {
+    res.status(404).json({ message: "歌曲不存在" });
+    return;
+  }
+  await track.destroy();
+  res.status(204).send();
+});
+
+export async function isMediaUsedByPlaylist(mediaId: string) {
+  return MusicTrack.findOne({
+    where: { [Op.or]: [{ audioMediaId: mediaId }, { coverMediaId: mediaId }] },
+    attributes: ["id"],
+  });
+}
 
 export default router;

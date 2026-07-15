@@ -7,19 +7,10 @@ interface PostMusic {
   artist: string;
   cover: string;
   url: string;
-  source: "netease" | "upload" | "musicfree";
-  neteaseId?: string;
-  platform?: string;
-  musicId?: string;
-  /** @deprecated 已并入 extra，保留以兼容旧数据。QQ 音乐系插件的 mid */
-  songmid?: string;
-  /**
-   * 插件特定字段对象（songmid/hash/bvid/cid 等），透传给插件 getMediaSource/getLyric。
-   * 对齐洛水 IMusicItem 全字段方案：search→store→play 全程保留插件字段。
-   */
-  extra?: Record<string, any>;
-  /** LRC 歌词文本（上传歌曲专用，客户端解析） */
+  source: "upload";
+  /** LRC 歌词文本，由管理员手动编辑。 */
   lrc?: string;
+  autoplay?: boolean;
 }
 
 interface LinkCard {

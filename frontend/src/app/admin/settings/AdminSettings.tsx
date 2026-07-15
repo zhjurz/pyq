@@ -39,10 +39,6 @@ interface SiteSettings {
   beianUrl: string;
   faviconUrl: string;
   ogImage: string;
-  musicUrl: string;
-  musicId: string;
-  musicSource: string;
-  playlistId: string;
   socialLinks: string;
   postCollapseLength: number;
   darkModeEnabled: boolean;
@@ -64,10 +60,6 @@ const DEFAULTS: SiteSettings = {
   beianUrl: "",
   faviconUrl: "",
   ogImage: "",
-  musicUrl: "",
-  musicId: "",
-  musicSource: "netease",
-  playlistId: "",
   socialLinks: "[]",
   postCollapseLength: 150,
   darkModeEnabled: false,

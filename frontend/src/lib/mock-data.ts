@@ -32,18 +32,8 @@ export interface PostMusic {
   artist: string;
   cover: string;
   url: string;
-  source: "netease" | "upload" | "musicfree";
-  neteaseId?: string;
-  platform?: string;
-  musicId?: string;
-  /** @deprecated 已并入 extra，保留以兼容旧数据。QQ 音乐系插件的 mid */
-  songmid?: string;
-  /**
-   * 插件特定字段对象（songmid/hash/bvid/cid 等），透传给后端插件 getMediaSource/getLyric。
-   * 对齐洛水 IMusicItem 全字段方案：搜索→存储→播放全程保留插件字段。
-   */
-  extra?: Record<string, any>;
-  /** LRC 歌词文本（上传歌曲时由用户编辑/标记，播放时客户端解析） */
+  source: "upload";
+  /** LRC 歌词文本，由管理员手动编辑。 */
   lrc?: string;
   /** 进入文章详情页时是否自动播放此音乐 */
   autoplay?: boolean;
@@ -435,28 +425,6 @@ const VIDEO_PLATFORM_LABELS: Record<string, string> = {
   embed: "嵌入视频",
 };
 
-const MUSIC_PLATFORM_LABELS: Record<string, string> = {
-  netease: "网易云音乐",
-  qq: "QQ音乐",
-  musicfree: "MusicFree",
-  upload: "本地上传",
-  migu: "咪咕音乐",
-  kuwo: "酷我音乐",
-  kugou: "酷狗音乐",
-};
-
-/**
- * MusicFree 插件 platform 名（如"小秋音乐"）→ 真实音乐平台中文名。
- * 与 TopBar.tsx 共享，保证发布与展示口径一致。
- */
-export const MUSIC_PLUGIN_LABELS: Record<string, string> = {
-  小秋音乐: "QQ音乐",
-  小蜗音乐: "酷我音乐",
-  小枸音乐: "酷狗音乐",
-  小蜜音乐: "咪咕音乐",
-  小芸音乐: "网易云音乐",
-};
-
 /** 根据动态的媒体内容返回"来自XXX"的平台标签 */
 export function getPostSourceLabel(post: Post): string | null {
   if (post.type === "article") return "文章";
@@ -467,22 +435,7 @@ export function getPostSourceLabel(post: Post): string | null {
     if (post.video.source === "parse") return "视频平台";
     return "视频";
   }
-  if (post.music) {
-    // 本地上传不显示来源标签
-    if (post.music.source === "upload") return null;
-    // MusicFree 插件：platform 存的是插件名（如"小秋音乐"），映射为平台中文名
-    const p = post.music.platform;
-    if (p) {
-      if (MUSIC_PLUGIN_LABELS[p]) return MUSIC_PLUGIN_LABELS[p];
-      if (MUSIC_PLATFORM_LABELS[p]) return MUSIC_PLATFORM_LABELS[p];
-      // 已是可读平台名（如旧数据 netease 已被上面 MUSIC_PLATFORM_LABELS 覆盖）
-      return p;
-    }
-    // 旧数据兼容：仅有 source 无 platform
-    if (post.music.source === "netease") return "网易云音乐";
-    // 无法判断具体平台时不显示无意义的"音乐"标签
-    return null;
-  }
+  if (post.music) return null;
   return null;
 }
 

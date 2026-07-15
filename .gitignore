@@ -22,11 +22,12 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# User data (keep directories via .gitkeep, ignore content)
+# User data (keep upload directory via .gitkeep, ignore content)
 backend/public/uploads/*
 !backend/public/uploads/.gitkeep
-backend/plugins/*
-!backend/plugins/.gitkeep
+
+# Local migration backup inventories
+backend/backups/
 
 # Docker runtime data
 mysql-data/

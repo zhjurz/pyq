@@ -41,7 +41,7 @@ import {
 import { cravatarUrl } from "@/lib/avatar";
 import { getGlobalAudio } from "@/lib/global-audio";
 import { useMusicPlayer } from "@/lib/music-player-store";
-import { Post, MUSIC_PLUGIN_LABELS, type PostLocation, type PostImage, type PostVideo, type PostDouban } from "@/lib/mock-data";
+import { Post, type PostLocation, type PostImage, type PostVideo, type PostDouban } from "@/lib/mock-data";
 import { isLivePhoto, getImageSrc } from "@/lib/post-image";
 import { uploadAudio, uploadDirect, uploadImage, uploadVideo, toAbsoluteUrl, toHttps } from "@/lib/upload";
 import { PUBLIC_API_URL } from "@/lib/api-fetch";
@@ -59,9 +59,6 @@ import DoubanSidebar from "./DoubanSidebar";
 
 const API_URL = PUBLIC_API_URL;
 const AUDIO_BASE = API_URL.replace("/api", "");
-
-/** 插件 platform 名 → 对应的真实音乐平台名（复用 mock-data 统一口径） */
-const PLATFORM_MAP = MUSIC_PLUGIN_LABELS;
 
 function toAbsolute(url: string): string {
   if (!url || typeof url !== "string") return "";
@@ -919,14 +916,8 @@ export function PublishModal({
     artist: string;
     cover: string;
     url: string;
-    source: "netease" | "upload" | "musicfree";
-    neteaseId?: string;
-    platform?: string;
-    musicId?: string;
-    songmid?: string;
-    /** 插件特定字段（songmid/hash/bvid ...），透传给后端 stream/lyric */
-    extra?: Record<string, any>;
-    /** LRC 歌词文本（上传歌曲） */
+    source: "upload";
+    /** LRC 歌词文本（R2 上传音乐） */
     lrc?: string;
   } | null>(editPost?.music ?? null);
   const [linkCard, setLinkCard] = useState<{
@@ -951,26 +942,12 @@ export function PublishModal({
   const [showMediaPicker, setShowMediaPicker] = useState(false);
   const [mediaRendered, setMediaRendered] = useState(false);
   const mediaSentinelRef = useRef<HTMLDivElement>(null);
-  // 编辑模式且已有音乐时，默认打开上传 Tab（方便就地编辑元数据）
-  const [musicTab, setMusicTab] = useState<"search" | "upload">(
-    isEdit && editPost?.music ? "upload" : "search"
-  );
-  const [musicPlugins, setMusicPlugins] = useState<{ platform: string; name: string; primaryKey?: string[] }[]>([]);
-  const [selectedPlatform, setSelectedPlatform] = useState("");
-  const [searchKeyword, setSearchKeyword] = useState("");
-  const [searchResults, setSearchResults] = useState<any[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [loadingMusic, setLoadingMusic] = useState(false);
+  // R2 音频仅支持上传或从媒体库选择。
   const [uploadingAudio, setUploadingAudio] = useState(false);
   // 编辑模式：从 editPost.music 回填元数据，避免用户看到空白表单
   const [customMusicName, setCustomMusicName] = useState(editPost?.music?.name ?? "");
   const [customMusicArtist, setCustomMusicArtist] = useState(editPost?.music?.artist ?? "");
   const [customMusicCover, setCustomMusicCover] = useState(editPost?.music?.cover ?? "");
-  const [customMusicUrl, setCustomMusicUrl] = useState(editPost?.music?.url ?? "");
-  // 编辑模式已有音频 URL 时默认 url 模式（保留原音频，无需重传）
-  const [audioUploadMode, setAudioUploadMode] = useState<"file" | "url">(
-    isEdit && editPost?.music?.url ? "url" : "file"
-  );
   const [uploadedAudioUrl, setUploadedAudioUrl] = useState(editPost?.music?.url ?? "");
   const [uploadedAudioName, setUploadedAudioName] = useState(editPost?.music?.name ?? "");
   const [customMusicLrc, setCustomMusicLrc] = useState(editPost?.music?.lrc ?? "");
@@ -1112,20 +1089,6 @@ export function PublishModal({
     setImages((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // 拉取内嵌音源列表
-  useEffect(() => {
-    if (!showMusicPanel || musicPlugins.length > 0) return;
-    fetch(`${API_URL}/music/sources`)
-      .then((r) => (r.ok ? r.json() : []))
-      .then((data: { platform: string; name: string; primaryKey: string[] }[]) => {
-        setMusicPlugins(data);
-        if (data.length > 0 && !selectedPlatform) {
-          setSelectedPlatform(data[0].platform);
-        }
-      })
-      .catch(() => {});
-  }, [showMusicPanel, musicPlugins.length, selectedPlatform]);
-
   // 媒体库小胶囊：分页拉取图片列表（初始12张=3排×4列，滚动到底自动加载下一页）
   const PAGE_SIZE = 24;
   useEffect(() => {
@@ -1191,99 +1154,6 @@ export function PublishModal({
     return () => observer.disconnect();
   }, [loadMoreMedia, showMediaPicker]);
 
-  // 搜索歌曲
-  const handleSearch = async () => {
-    const kw = searchKeyword.trim();
-    if (!kw || !selectedPlatform) return;
-    setSearching(true);
-    setError("");
-    setSearchResults([]);
-    try {
-      const res = await fetch(
-        `${API_URL}/music/search?platform=${encodeURIComponent(selectedPlatform)}&keyword=${encodeURIComponent(kw)}&page=1&type=music`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      if (res.ok) {
-        const data = await res.json();
-        setSearchResults(data.data || []);
-        if (!data.data || data.data.length === 0) {
-          setError("未找到相关歌曲");
-        }
-      } else {
-        const err = await res.json().catch(() => ({ message: "搜索失败" }));
-        setError(err.message || "搜索失败");
-      }
-    } catch {
-      setError("网络错误");
-    } finally {
-      setSearching(false);
-    }
-  };
-
-  // 选中搜索结果：调 preview 获取播放地址，歌曲信息优先用搜索结果
-  // 搜索结果返回完整 IMusicItem（含 songmid/hash/bvid 等插件字段），全部透传给后端
-  const handlePickSong = async (item: any) => {
-    setLoadingMusic(true);
-    setError("");
-    try {
-      // 提取搜索结果中的所有插件特定字段（非标准字段），作为 extra 透传
-      const standardFields = new Set([
-        "id", "platform", "title", "artist", "album", "artwork", "url", "lrc", "rawLrc", "duration",
-      ]);
-      const extra: Record<string, any> = {};
-      for (const [k, v] of Object.entries(item)) {
-        if (!standardFields.has(k) && v != null && v !== "") {
-          extra[k] = v;
-        }
-      }
-      const res = await fetch(`${API_URL}/music/preview`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          id: String(item.id),
-          platform: selectedPlatform,
-          extra,
-          title: item.title,
-          artist: item.artist,
-          artwork: item.artwork,
-          album: item.album,
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (!data.playable) {
-          setError(data.reason === "headers-required"
-            ? "该音源需要防盗链请求头，不能在直连模式播放"
-            : "该歌曲无法获取可直连的播放地址");
-          return;
-        }
-        const finalExtra =
-          Object.keys(extra).length > 0 ? extra : (data.extra || undefined);
-        setMusic({
-          name: item.title || data.name || "音乐",
-          artist: item.artist || data.author || "",
-          cover: item.artwork || data.cover || "",
-          url: data.mp3url || "",
-          source: "musicfree",
-          platform: selectedPlatform,
-          musicId: String(item.id),
-          extra: finalExtra,
-        });
-        setShowMusicPanel(false);
-        if (!data.mp3url) {
-          setError("该歌曲因版权限制无法播放，但仍会显示在动态中");
-        }
-      } else {
-        const err = await res.json().catch(() => ({ message: "获取失败" }));
-        setError(err.message || "获取歌曲失败");
-      }
-    } catch {
-      setError("网络错误");
-    } finally {
-      setLoadingMusic(false);
-    }
-  };
-
   const handleUploadAudio = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     const file = files[0];
@@ -1318,9 +1188,9 @@ export function PublishModal({
   };
 
   const handleConfirmUploadMusic = () => {
-    const url = audioUploadMode === "file" ? uploadedAudioUrl : customMusicUrl.trim();
+    const url = uploadedAudioUrl;
     if (!url) {
-      setError("请上传音频文件或输入音频直链");
+      setError("请上传 R2 音频文件");
       return;
     }
     setMusic({
@@ -2043,7 +1913,6 @@ export function PublishModal({
                 {music.source === "upload" && (
                   <button
                     onClick={() => {
-                      setMusicTab("upload");
                       setShowMusicPanel(true);
                     }}
                     className="text-wechat-time hover:text-wechat-text"
@@ -2065,11 +1934,9 @@ export function PublishModal({
                   setCustomMusicName("");
                   setCustomMusicArtist("");
                   setCustomMusicCover("");
-                  setCustomMusicUrl("");
                   setUploadedAudioUrl("");
                   setUploadedAudioName("");
                   setCustomMusicLrc("");
-                  setAudioUploadMode("file");
                   setShowLyricEditor(false);
                   setShowMusicPanel(true);
                 }}
@@ -2185,131 +2052,7 @@ export function PublishModal({
             <span className="w-8" />
           </div>
 
-          {/* Tabs */}
-          <div className="flex border-b border-black/5 dark:border-white/5">
-            <button
-              onClick={() => setMusicTab("search")}
-              className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
-                musicTab === "search"
-                  ? "border-b-2 border-green-500 text-wechat-text dark:text-gray-200"
-                  : "text-wechat-time"
-              }`}
-            >
-              搜索
-            </button>
-            <button
-              onClick={() => setMusicTab("upload")}
-              className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
-                musicTab === "upload"
-                  ? "border-b-2 border-green-500 text-wechat-text dark:text-gray-200"
-                  : "text-wechat-time"
-              }`}
-            >
-              上传音乐
-            </button>
-          </div>
-
-          {/* Search tab */}
-          {musicTab === "search" && (
-            <div className="flex min-h-0 flex-1 flex-col p-4">
-              {musicPlugins.length === 0 ? (
-                <p className="py-8 text-center text-xs text-wechat-time">
-                  暂无可用音源，请先在后台「音乐管理」安装并启用插件
-                </p>
-              ) : (
-                <>
-                  <div className="mb-3 space-y-2">
-                    <select
-                      value={selectedPlatform}
-                      onChange={(e) => {
-                        setSelectedPlatform(e.target.value);
-                        setSearchResults([]);
-                      }}
-                      className="w-full rounded-lg border border-black/5 bg-wechat-bubble px-3 py-2.5 text-sm text-wechat-text focus:outline-none dark:border-white/5 dark:bg-white/5 dark:text-gray-200"
-                    >
-                      {musicPlugins.map((p) => (
-                        <option key={p.platform} value={p.platform}>
-                          {PLATFORM_MAP[p.platform] ? `${p.name}（${PLATFORM_MAP[p.platform]}）` : p.name}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={searchKeyword}
-                        onChange={(e) => setSearchKeyword(e.target.value)}
-                        onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                        placeholder="搜索歌曲、歌手"
-                        className="min-w-0 flex-1 rounded-lg border border-black/5 bg-wechat-bubble px-3 py-2.5 text-sm text-wechat-text placeholder:text-wechat-time focus:outline-none dark:border-white/5 dark:bg-white/5 dark:text-gray-200 dark:placeholder:text-gray-500"
-                      />
-                      <button
-                        onClick={handleSearch}
-                        disabled={searching || !searchKeyword.trim()}
-                        className="shrink-0 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors disabled:bg-wechat-bubble disabled:text-wechat-time enabled:bg-green-500 enabled:text-white enabled:hover:bg-green-600 dark:disabled:bg-white/5 dark:disabled:text-gray-500"
-                      >
-                        {searching ? "..." : "搜索"}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Search results */}
-                  <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-                    {searching && (
-                      <div className="space-y-2">
-                        {[...Array(4)].map((_, i) => (
-                          <div key={i} className="flex items-center gap-2.5 p-2">
-                            <div className="h-10 w-10 shrink-0 animate-pulse rounded bg-wechat-bubble dark:bg-white/5" />
-                            <div className="flex-1 space-y-1">
-                              <div className="h-3 w-3/4 animate-pulse rounded bg-wechat-bubble dark:bg-white/5" />
-                              <div className="h-2.5 w-1/2 animate-pulse rounded bg-wechat-bubble dark:bg-white/5" />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {!searching && searchResults.length > 0 && (
-                      <div className="space-y-1">
-                        {searchResults.map((item, i) => (
-                          <button
-                            key={`${item.id}-${i}`}
-                            onClick={() => handlePickSong(item)}
-                            disabled={loadingMusic}
-                            className="flex w-full items-center gap-2.5 rounded-lg p-2 text-left transition-colors hover:bg-wechat-bubble disabled:opacity-50 dark:hover:bg-white/5"
-                          >
-                            {item.artwork ? (
-                              <LazyImage src={toHttps(item.artwork)} alt="" className="h-10 w-10 shrink-0 rounded object-cover" />
-                            ) : (
-                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-wechat-bubble dark:bg-white/5">
-                                <Music className="h-4 w-4 text-wechat-time" />
-                              </div>
-                            )}
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm text-wechat-text dark:text-gray-200">
-                                {item.title}
-                              </p>
-                              <p className="truncate text-xs text-wechat-time">
-                                {item.artist}
-                                {item.album ? ` · ${item.album}` : ""}
-                              </p>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    {!searching && searchResults.length === 0 && searchKeyword.trim() && !error && (
-                      <p className="py-8 text-center text-xs text-wechat-time">
-                        输入关键词后点击搜索
-                      </p>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
-          {/* Upload tab */}
-          {musicTab === "upload" && (
-            <div className="flex-1 overflow-y-auto p-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+          <div className="flex-1 overflow-y-auto p-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
               <div className="space-y-4">
                 {/* 封面 */}
                 <div>
@@ -2403,36 +2146,8 @@ export function PublishModal({
 
                 {/* 音频来源：上传文件 / 直链URL 切换 */}
                 <div>
-                  <label className="mb-1.5 block text-xs font-medium text-wechat-time">
-                    音频来源
-                  </label>
-                  <div className="mb-2 flex gap-1 rounded-lg bg-wechat-bubble p-0.5 dark:bg-white/5">
-                    <button
-                      type="button"
-                      onClick={() => setAudioUploadMode("file")}
-                      className={`flex-1 rounded-md py-1.5 text-xs font-medium transition-colors ${
-                        audioUploadMode === "file"
-                          ? "bg-white text-wechat-text dark:bg-white/10 dark:text-gray-200"
-                          : "text-wechat-time"
-                      }`}
-                    >
-                      上传文件
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setAudioUploadMode("url")}
-                      className={`flex-1 rounded-md py-1.5 text-xs font-medium transition-colors ${
-                        audioUploadMode === "url"
-                          ? "bg-white text-wechat-text dark:bg-white/10 dark:text-gray-200"
-                          : "text-wechat-time"
-                      }`}
-                    >
-                      直链 URL
-                    </button>
-                  </div>
-
-                  {audioUploadMode === "file" ? (
-                    uploadedAudioUrl ? (
+                  <label className="mb-1.5 block text-xs font-medium text-wechat-time">R2 音频文件</label>
+                  {uploadedAudioUrl ? (
                       <div className="flex items-center justify-between rounded-lg border border-black/5 bg-wechat-bubble px-3 py-2.5 dark:border-white/5 dark:bg-white/5">
                         <div className="flex min-w-0 items-center gap-2">
                           <Music className="h-4 w-4 shrink-0 text-green-500" />
@@ -2495,22 +2210,14 @@ export function PublishModal({
                           category="audio"
                           title="从媒体库选择音频"
                           onSelect={(item: PickerMediaItem) => {
-                            setCustomMusicUrl(item.url);
-                            setAudioUploadMode("url");
+                            setUploadedAudioUrl(item.url);
+                            setUploadedAudioName(item.filename);
+                            if (!customMusicName) setCustomMusicName(item.filename.replace(/\.[^.]+$/, ""));
                             setMediaPickerMode(null);
                           }}
                         />
                       </div>
-                    )
-                  ) : (
-                    <input
-                      type="url"
-                      value={customMusicUrl}
-                      onChange={(e) => setCustomMusicUrl(e.target.value)}
-                      placeholder="https://example.com/song.mp3"
-                      className="w-full rounded-lg border border-black/5 bg-wechat-bubble px-3 py-2 text-sm text-wechat-text placeholder:text-wechat-time focus:outline-none dark:border-white/5 dark:bg-white/5 dark:text-gray-200 dark:placeholder:text-gray-500"
-                    />
-                  )}
+                    )}
                 </div>
 
                 {/* 歌词（可折叠） */}
@@ -2534,7 +2241,7 @@ export function PublishModal({
                   {showLyricEditor && (
                     <div className="mt-2">
                       <LyricEditor
-                        audioUrl={audioUploadMode === "file" ? uploadedAudioUrl : customMusicUrl.trim()}
+                        audioUrl={uploadedAudioUrl}
                         value={customMusicLrc}
                         onChange={setCustomMusicLrc}
                       />
@@ -2546,14 +2253,13 @@ export function PublishModal({
                 <button
                   type="button"
                   onClick={handleConfirmUploadMusic}
-                  disabled={(audioUploadMode === "file" ? !uploadedAudioUrl : !customMusicUrl.trim())}
+                  disabled={!uploadedAudioUrl}
                   className="w-full rounded-lg py-2.5 text-sm font-medium transition-colors disabled:bg-wechat-bubble disabled:text-wechat-time enabled:bg-green-500 enabled:text-white enabled:hover:bg-green-600 dark:disabled:bg-white/5 dark:disabled:text-gray-500"
                 >
                   确认使用
                 </button>
               </div>
             </div>
-          )}
         </div>
       )}
 

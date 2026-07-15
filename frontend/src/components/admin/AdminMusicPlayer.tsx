@@ -7,7 +7,7 @@ import { getGlobalAudio } from "@/lib/global-audio";
 import { useMusicPlayer } from "@/lib/music-player-store";
 
 /** Admin header player. It shares the global playlist resolver so it never assumes
- * MusicFree tracks already contain a durable browser-playable URL. */
+ * R2 tracks contain durable browser-playable URLs. */
 export default function AdminMusicPlayer() {
   const activePostMusic = useMusicPlayer((s) => s.activePostMusic);
   const playlist = useMusicPlayer((s) => s.playlist);
@@ -110,7 +110,7 @@ export default function AdminMusicPlayer() {
             </div>
             <div className="py-1">
               {playlist.map((track, index) => (
-                <button key={`${track.platform || "static"}-${track.id}-${index}`} onClick={() => void playTrack(index)} className={`flex w-full items-center gap-2 px-4 py-2 text-left text-sm transition-colors hover:bg-adm-card-hover ${index === currentIndex && !isPostMusic ? "text-adm-primary" : "text-adm-text-secondary"}`}>
+                <button key={`track-${track.id}-${index}`} onClick={() => void playTrack(index)} className={`flex w-full items-center gap-2 px-4 py-2 text-left text-sm transition-colors hover:bg-adm-card-hover ${index === currentIndex && !isPostMusic ? "text-adm-primary" : "text-adm-text-secondary"}`}>
                   <span className="w-4 shrink-0 text-center text-xs">{index === currentIndex && !isPostMusic && isPlaying ? "♪" : index + 1}</span>
                   <span className="min-w-0 flex-1 truncate">{track.name}</span>
                   {track.artist && <span className="shrink-0 text-xs text-adm-text-tertiary">{track.artist}</span>}

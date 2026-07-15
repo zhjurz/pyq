@@ -103,7 +103,7 @@ export default function AdminLayoutClient({
       items: [
         { href: "/admin/users", label: "个人资料", icon: User },
         { href: "/admin/friends", label: "友情链接", icon: BookUser },
-        { href: "/admin/plugins", label: "音乐管理", icon: Music },
+        { href: "/admin/music", label: "R2 音乐歌单", icon: Music },
         { href: "/admin/storage", label: "云端存储", icon: Cloud },
         { href: "/admin/settings", label: "网站设置", icon: Settings2 },
       ],

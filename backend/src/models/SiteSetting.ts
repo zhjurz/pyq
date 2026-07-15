@@ -10,10 +10,6 @@ interface SiteSettingAttributes {
   beian: string;
   faviconUrl: string;
   ogImage: string;
-  musicUrl: string;
-  musicId: string;
-  musicSource: string;
-  playlistId: string;
   backgroundImages: string;
   darkModeEnabled: boolean;
   darkModeStartTime: string;
@@ -51,7 +47,7 @@ interface SiteSettingAttributes {
 
 interface SiteSettingCreationAttributes extends Optional<
   SiteSettingAttributes,
-  "id" | "siteName" | "description" | "keywords" | "domain" | "beian" | "faviconUrl" | "ogImage" | "musicUrl" | "musicId" | "musicSource" | "playlistId" | "backgroundImages" | "darkModeEnabled" | "darkModeStartTime" | "darkModeEndTime" | "emailNotifyEnabled" | "notifyEmail" | "smtpHost" | "smtpPort" | "smtpSecure" | "smtpUser" | "smtpPass" | "smtpFrom" | "emailTemplate" | "amapJsKey" | "amapSecurityJsCode" | "amapKey" | "beianUrl" | "socialLinks" | "postCollapseLength" | "fontUrl" | "adOnArchives" | "commentAntiSpamEnabled" | "rssEnabled" | "rssIncludeMoments" | "doubanId" | "bannedWords" | "musicAutoplay"
+  "id" | "siteName" | "description" | "keywords" | "domain" | "beian" | "faviconUrl" | "ogImage" | "backgroundImages" | "darkModeEnabled" | "darkModeStartTime" | "darkModeEndTime" | "emailNotifyEnabled" | "notifyEmail" | "smtpHost" | "smtpPort" | "smtpSecure" | "smtpUser" | "smtpPass" | "smtpFrom" | "emailTemplate" | "amapJsKey" | "amapSecurityJsCode" | "amapKey" | "beianUrl" | "socialLinks" | "postCollapseLength" | "fontUrl" | "adOnArchives" | "commentAntiSpamEnabled" | "rssEnabled" | "rssIncludeMoments" | "doubanId" | "bannedWords" | "musicAutoplay"
 > {}
 
 class SiteSetting
@@ -66,10 +62,6 @@ class SiteSetting
   declare beian: string;
   declare faviconUrl: string;
   declare ogImage: string;
-  declare musicUrl: string;
-  declare musicId: string;
-  declare musicSource: string;
-  declare playlistId: string;
   declare backgroundImages: string;
   declare darkModeEnabled: boolean;
   declare darkModeStartTime: string;
@@ -142,27 +134,6 @@ SiteSetting.init(
       type: DataTypes.STRING(500),
       allowNull: false,
       defaultValue: "",
-    },
-    musicUrl: {
-      type: DataTypes.STRING(500),
-      allowNull: false,
-      defaultValue: "",
-    },
-    musicId: {
-      type: DataTypes.STRING(50),
-      allowNull: false,
-      defaultValue: "",
-    },
-    musicSource: {
-      type: DataTypes.STRING(20),
-      allowNull: false,
-      defaultValue: "netease",
-    },
-    playlistId: {
-      type: DataTypes.STRING(50),
-      allowNull: false,
-      defaultValue: "",
-      field: "playlistId",
     },
     backgroundImages: {
       type: DataTypes.TEXT,

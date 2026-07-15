@@ -8,7 +8,8 @@ import SiteSetting from "./SiteSetting";
 import FriendLink from "./FriendLink";
 import Blacklist from "./Blacklist";
 import Media from "./Media";
-import MusicSource from "./MusicSource";
+import MusicPlaylist from "./MusicPlaylist";
+import MusicTrack from "./MusicTrack";
 import UploadIntent from "./UploadIntent";
 
 // Associations
@@ -32,5 +33,26 @@ User.hasMany(CommentLike, { foreignKey: "userId", as: "userCommentLikes" });
 Media.belongsTo(User, { foreignKey: "uploaderId", as: "uploader" });
 User.hasMany(Media, { foreignKey: "uploaderId", as: "uploadedMedia" });
 
-export { sequelize, User, Post, Comment, Like, CommentLike, SiteSetting, FriendLink, Blacklist, Media, MusicSource, UploadIntent };
+MusicPlaylist.hasMany(MusicTrack, { foreignKey: "playlistId", as: "tracks", onDelete: "CASCADE" });
+MusicTrack.belongsTo(MusicPlaylist, { foreignKey: "playlistId", as: "playlist" });
+MusicTrack.belongsTo(Media, { foreignKey: "audioMediaId", as: "audio" });
+MusicTrack.belongsTo(Media, { foreignKey: "coverMediaId", as: "cover" });
+Media.hasMany(MusicTrack, { foreignKey: "audioMediaId", as: "audioPlaylistTracks" });
+Media.hasMany(MusicTrack, { foreignKey: "coverMediaId", as: "coverPlaylistTracks" });
+
+export {
+  sequelize,
+  User,
+  Post,
+  Comment,
+  Like,
+  CommentLike,
+  SiteSetting,
+  FriendLink,
+  Blacklist,
+  Media,
+  MusicPlaylist,
+  MusicTrack,
+  UploadIntent,
+};
 export { getMediaCategory } from "./Media";

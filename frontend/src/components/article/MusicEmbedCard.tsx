@@ -3,7 +3,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { Music, AlertCircle, Pause } from "lucide-react";
 import type { PostMusic } from "@/lib/mock-data";
-import { useMusicPlayer, resolvePostMusicUrl } from "@/lib/music-player-store";
+import { useMusicPlayer, getStaticMusicUrl } from "@/lib/music-player-store";
 import { getGlobalAudio } from "@/lib/global-audio";
 import { toHttps, toAbsoluteUrl } from "@/lib/upload";
 import LazyImage from "@/components/LazyImage";
@@ -73,19 +73,14 @@ export default function MusicEmbedCard({ music, postId }: MusicEmbedCardProps) {
     if (!audio) return;
 
     try {
-      const playUrl = await resolvePostMusicUrl(music);
-      if (!playUrl) throw new Error("无法解析播放地址");
+      const playUrl = getStaticMusicUrl(music);
+      if (!playUrl) throw new Error("该文章没有可播放的 R2 音频文件。");
       setActiveMusic(postId, {
         postId,
         url: playUrl,
         name: music.name,
         artist: music.artist,
         cover: music.cover,
-        neteaseId: music.neteaseId || "",
-        platform: music.platform,
-        musicId: music.musicId,
-        songmid: music.songmid,
-        extra: music.extra,
         lrc: music.lrc,
       });
       audio.src = playUrl;

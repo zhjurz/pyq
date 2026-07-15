@@ -58,7 +58,7 @@ const ALL_SHORTCUTS = [
   { key: "comments", label: "评论管理", icon: MessageCircle, href: "/admin/comments", desc: "查看和管理评论" },
   { key: "ads", label: "广告管理", icon: Megaphone, href: "/admin/ads", desc: "管理广告动态" },
   { key: "friends", label: "友情链接", icon: BookUser, href: "/admin/friends", desc: "管理友情链接" },
-  { key: "music", label: "音乐管理", icon: Music, href: "/admin/plugins", desc: "管理音乐插件和背景音乐" },
+  { key: "music", label: "R2 音乐歌单", icon: Music, href: "/admin/music", desc: "管理 R2 上传的背景音乐" },
   { key: "media", label: "媒体库", icon: Library, href: "/admin/media", desc: "管理图片、视频、音频文件" },
   { key: "storage", label: "云端存储", icon: Cloud, href: "/admin/storage", desc: "管理云存储服务商配置" },
   { key: "settings", label: "网站设置", icon: Settings2, href: "/admin/settings", desc: "配置网站基本信息" },

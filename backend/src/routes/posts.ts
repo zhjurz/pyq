@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { body, param, validationResult } from "express-validator";
 import { Op, fn, col } from "sequelize";
-import { Post, Comment, Like, CommentLike, User, SiteSetting } from "../models";
+import { Post, Comment, Like, CommentLike, User, SiteSetting, Media } from "../models";
 import { authenticate, authenticateOptional, AuthRequest, requireAdmin } from "../middleware/auth";
 import { getClientIp } from "../utils/ip";
 import { getRegionByIp } from "../utils/region";
@@ -116,13 +116,42 @@ function sortCommentsThreaded<T extends { id: string; replyTo?: string | null; r
   return result;
 }
 
+function normalizeMusicPayload(value: unknown) {
+  if (value == null) return null;
+  if (typeof value !== "object" || Array.isArray(value)) throw new Error("音乐信息格式无效");
+  const music = value as Record<string, unknown>;
+  if (music.source !== "upload" || typeof music.url !== "string" || !music.url) {
+    throw new Error("音乐仅支持已上传到 R2 的音频文件");
+  }
+  return music;
+}
+
+async function validateR2MusicPayload(value: unknown, userId: string) {
+  const music = normalizeMusicPayload(value);
+  if (!music) return null;
+  const url = music.url;
+  if (typeof url !== "string") throw new Error("音乐地址格式无效");
+  const audio = await Media.findOne({ where: { url, uploaderId: userId, storageType: "r2" } });
+  if (!audio || !audio.mimeType.startsWith("audio/")) {
+    throw new Error("音乐必须引用本人上传的 R2 音频文件");
+  }
+  if (music.cover) {
+    if (typeof music.cover !== "string") throw new Error("音乐封面格式无效");
+    const cover = await Media.findOne({ where: { url: music.cover, uploaderId: userId, storageType: "r2" } });
+    if (!cover || !cover.mimeType.startsWith("image/")) throw new Error("音乐封面必须引用本人上传的 R2 图片");
+  }
+  const name = typeof music.name === "string" ? music.name.trim().slice(0, 255) : "";
+  const artist = typeof music.artist === "string" ? music.artist.trim().slice(0, 255) : "";
+  const lrc = typeof music.lrc === "string" ? music.lrc.slice(0, 100_000) : undefined;
+  return { name: name || audio.filename.replace(/\.[^.]+$/, ""), artist, cover: typeof music.cover === "string" ? music.cover : "", url: audio.url, source: "upload" as const, ...(lrc ? { lrc } : {}), ...(typeof music.autoplay === "boolean" ? { autoplay: music.autoplay } : {}) };
+}
+
 function formatPost(
   post: any,
   meLiked = false,
   commentLikesMap?: Map<string, { likeCount: number; meLiked: boolean }>
 ) {
-  // MusicFree 曲目由客户端播放时按需调用 /api/music/resolve 取得短期直链。
-  // 不重写为 /stream：Vercel 部署禁止音频经过 Serverless 函数。
+  // 静态 R2 音频直接返回，无需解析外部音源。
   const music = post.music || null;
   let linkCard = post.linkCard;
   if (typeof linkCard === "string") {
@@ -416,6 +445,8 @@ router.post(
       status = "published",
     } = req.body;
 
+    const normalizedMusic = await validateR2MusicPayload(music, req.user!.id);
+
     // 广告不允许置顶，强制清零防止前端绕过
     const finalPinned = isAd ? false : pinned;
 
@@ -439,7 +470,7 @@ router.post(
           content,
           images,
           location,
-          music,
+          music: normalizedMusic,
           linkCard,
           video,
           douban,
@@ -514,6 +545,10 @@ router.put(
       return;
     }
 
+    const normalizedMusic = req.body.music !== undefined
+      ? await validateR2MusicPayload(req.body.music, req.user!.id)
+      : post.music;
+
     // 广告不允许置顶：即使传入 pinned=true 也强制为 false
     const incomingPinned = req.body.pinned;
     const finalPinned =
@@ -533,7 +568,7 @@ router.put(
       images: req.body.images !== undefined ? req.body.images : post.images,
       location: req.body.location !== undefined ? req.body.location : post.location,
       region: req.body.region !== undefined ? req.body.region : post.region,
-      music: req.body.music !== undefined ? req.body.music : post.music,
+      music: normalizedMusic,
       linkCard: req.body.linkCard !== undefined ? req.body.linkCard : post.linkCard,
       video: req.body.video !== undefined ? req.body.video : post.video,
       douban: req.body.douban !== undefined ? req.body.douban : post.douban,

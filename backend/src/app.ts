@@ -17,7 +17,6 @@ import mediaRoutes from "./routes/media";
 import locationRoutes from "./routes/location";
 import urlPreviewRoutes from "./routes/url-preview";
 import videoParseRoutes from "./routes/video-parse";
-import pluginsRoutes from "./routes/plugins";
 import doubanRoutes from "./routes/douban";
 import { visitorCookieMiddleware } from "./middleware/visitor-cookie";
 import { ensureReady } from "./bootstrap";
@@ -54,7 +53,7 @@ if (!process.env.VERCEL) {
   app.use("/uploads", express.static(path.join(__dirname, "../public/uploads")));
 }
 
-// 在处理业务路由前确保数据库已连接、表已同步、插件已加载。
+// 在处理业务路由前确保数据库已连接、表已同步。
 // 传统部署下 bootstrap 已在进程启动时执行过一次，这里的 ensureReady()
 // 会立即 resolve，不产生额外开销；Serverless 下首次冷启动在此等待初始化。
 app.use(async (_req, res, next) => {
@@ -87,7 +86,6 @@ app.use("/api/media", mediaRoutes);
 app.use("/api/location", locationRoutes);
 app.use("/api/url-preview", urlPreviewRoutes);
 app.use("/api/video", videoParseRoutes);
-app.use("/api/admin/plugins", pluginsRoutes);
 app.use("/api/douban", doubanRoutes);
 
 // Error handler

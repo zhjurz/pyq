@@ -10,7 +10,7 @@ import { normalizeImages } from "@/lib/post-image";
 import { toAbsoluteUrl, toHttps } from "@/lib/upload";
 import { renderContent } from "@/lib/sanitize";
 import { getCurrentUser, authFetchHeaders } from "@/lib/auth";
-import { useMusicPlayer, resolvePostMusicUrl } from "@/lib/music-player-store";
+import { useMusicPlayer, getStaticMusicUrl } from "@/lib/music-player-store";
 import { getGlobalAudio } from "@/lib/global-audio";
 import { useEditPost } from "@/lib/edit-post-store";
 import ImageGrid from "@/components/ImageGrid";
@@ -238,19 +238,14 @@ export default function PostDetail({ post }: PostDetailProps) {
       return;
     }
     try {
-      const playUrl = await resolvePostMusicUrl(post.music);
-      if (!playUrl) return;
+      const playUrl = getStaticMusicUrl(post.music);
+      if (!playUrl) throw new Error("该动态没有可播放的 R2 音频文件。");
       setActiveMusic(post.id, {
         postId: post.id,
         url: playUrl,
         name: post.music.name,
         artist: post.music.artist,
         cover: post.music.cover,
-        neteaseId: post.music.neteaseId || "",
-        platform: post.music.platform,
-        musicId: post.music.musicId,
-        songmid: post.music.songmid,
-        extra: post.music.extra,
         lrc: post.music.lrc,
       });
       audio.src = playUrl;

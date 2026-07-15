@@ -11,7 +11,7 @@ import { normalizeImages } from "@/lib/post-image";
 import { toAbsoluteUrl, toHttps } from "@/lib/upload";
 import { getCurrentUser } from "@/lib/auth";
 import { renderContent } from "@/lib/sanitize";
-import { useMusicPlayer, resolvePostMusicUrl } from "@/lib/music-player-store";
+import { useMusicPlayer, getStaticMusicUrl } from "@/lib/music-player-store";
 import { useEditPost } from "@/lib/edit-post-store";
 import { useSiteSettings } from "@/lib/site-settings-store";
 import { getGlobalAudio } from "@/lib/global-audio";
@@ -211,19 +211,14 @@ export default function PostCard({ post, index, onDelete }: PostCardProps) {
     }
 
     try {
-      const playUrl = await resolvePostMusicUrl(post.music);
-      if (!playUrl) return;
+      const playUrl = getStaticMusicUrl(post.music);
+      if (!playUrl) throw new Error("该动态没有可播放的 R2 音频文件。");
       setActiveMusic(post.id, {
         postId: post.id,
         url: playUrl,
         name: post.music.name,
         artist: post.music.artist,
         cover: post.music.cover,
-        neteaseId: post.music.neteaseId || "",
-        platform: post.music.platform || (post.music.source === "netease" ? "wy" : undefined),
-        musicId: post.music.musicId,
-        songmid: post.music.songmid,
-        extra: post.music.extra,
         lrc: post.music.lrc,
       });
       audio.src = playUrl;

@@ -6,7 +6,7 @@ import { useMusicPlayer, type LyricLine, type PlaylistTrack } from "@/lib/music-
 import { useSiteSettings } from "@/lib/site-settings-store";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
-const AUDIO_BASE = API_URL.replace("/api", "");
+const AUDIO_BASE = API_URL.replace(/\/api$/, "");
 
 function toAbsolute(url: string): string {
   if (!url || typeof url !== "string") return "";
@@ -15,216 +15,122 @@ function toAbsolute(url: string): string {
 
 function parseLyric(lrc: string): LyricLine[] | null {
   if (!lrc) return null;
-  const lines = lrc.split("\n");
   const parsed: LyricLine[] = [];
   const timeRegex = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/g;
-  for (const line of lines) {
+  for (const line of lrc.split("\n")) {
     const times: number[] = [];
-    let match;
+    let match: RegExpExecArray | null;
     while ((match = timeRegex.exec(line)) !== null) {
-      const min = Number(match[1]);
-      const sec = Number(match[2]);
-      const msRaw = match[3];
-      const ms = msRaw.length === 2 ? Number(msRaw) * 10 : Number(msRaw);
-      times.push(min * 60 * 1000 + sec * 1000 + ms);
+      const ms = match[3].length === 2 ? Number(match[3]) * 10 : Number(match[3]);
+      times.push(Number(match[1]) * 60_000 + Number(match[2]) * 1_000 + ms);
     }
-    if (times.length === 0) continue;
     const text = line.replace(/\[\d{2}:\d{2}\.\d{2,3}\]/g, "").trim();
-    for (const timeMs of times) {
-      parsed.push({ timeMs, text });
-    }
+    times.forEach((timeMs) => parsed.push({ timeMs, text }));
   }
-  if (parsed.length === 0) return null;
-  parsed.sort((a, b) => a.timeMs - b.timeMs);
-  return parsed;
+  return parsed.length ? parsed.sort((a, b) => a.timeMs - b.timeMs) : null;
 }
 
-async function fetchLyric(
-  platform: string,
-  id: string,
-  extra?: Record<string, any>,
-  signal?: AbortSignal
-): Promise<string | null> {
-  if (!platform || !id) return null;
-  const params = new URLSearchParams({ platform, id });
-  if (extra) {
-    for (const [k, v] of Object.entries(extra)) {
-      if (v != null && v !== "") params.set(k, String(v));
-    }
-  }
-  try {
-    const res = await fetch(`${API_URL}/music/lyric?${params.toString()}`, { signal });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data?.rawLrc || null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * 全局音乐管理器：在 layout.tsx 中挂载，无形组件（返回 null）。
- * 职责：
- * 1. 首次 fetch /api/music → store（只执行一次）
- * 2. 绑定 audio 事件 → store（全局唯一一份）
- * 3. onEnded 切歌逻辑
- * 4. 歌词 fetch（监听 activePostMusic / playlist[currentIndex] 变化）
- */
+/** Owns the shared R2 audio element and site-wide static playlist state. */
 export default function GlobalMusicManager() {
-  const initRef = useRef(false);
-  const lyricAbortRef = useRef<AbortController | null>(null);
+  const initialized = useRef(false);
 
-  // ===== 1. 首次 fetch /api/music =====
   useEffect(() => {
-    if (initRef.current) return;
-    initRef.current = true;
-
-    // 并行获取音乐数据和站点设置（确保 musicAutoplay 可用）
+    if (initialized.current) return;
+    initialized.current = true;
     Promise.all([
-      fetch(`${API_URL}/music`).then((res) => (res.ok ? res.json() : {})),
+      fetch(`${API_URL}/music`).then((response) => (response.ok ? response.json() : {})),
       useSiteSettings.getState().fetchSettings(),
     ])
-      .then(([data]: [{
-        mp3url?: string;
-        name?: string;
-        id?: string;
-        lyric?: string;
-        playlist?: PlaylistTrack[];
-        currentIndex?: number;
-      }, void]) => {
-        const playlist: PlaylistTrack[] = Array.isArray(data.playlist) && data.playlist.length > 0
+      .then(([data]: [{ mp3url?: string; name?: string; id?: string; lyric?: string; playlist?: PlaylistTrack[]; currentIndex?: number; musicAutoplay?: boolean }, void]) => {
+        const playlist = Array.isArray(data.playlist)
           ? data.playlist.map((track) => ({ ...track, mp3url: toAbsolute(track.mp3url) }))
           : [];
-        const musicUrl = toAbsolute(data.mp3url || "");
+        const first = playlist[data.currentIndex || 0];
+        const musicUrl = toAbsolute(data.mp3url || first?.mp3url || "");
         if (!musicUrl && playlist.length === 0) {
-          // 后端未配置音乐：标记已加载（避免顶栏一直显示骨架），停止切歌过渡
           useMusicPlayer.setState({ musicLoaded: true, switching: false });
           return;
         }
-        const first = playlist[data.currentIndex || 0];
         useMusicPlayer.getState().initMusic({
           mp3url: musicUrl,
           name: data.name || first?.name || "",
           id: data.id || first?.id || "",
-          lyric: data.lyric ? parseLyric(data.lyric) : null,
+          lyric: parseLyric(data.lyric || first?.lyric || first?.lrc || ""),
           playlist,
           currentIndex: data.currentIndex || 0,
         });
-
-        // 只对本身就是直链的单曲尝试自动播放。歌单在用户选择时按需解析。
-        if (useSiteSettings.getState().musicAutoplay && musicUrl) {
+        if ((data.musicAutoplay ?? useSiteSettings.getState().musicAutoplay) && musicUrl) {
           const audio = getGlobalAudio();
           if (audio) {
             audio.src = musicUrl;
-            audio.play().catch(() => {
-              // 浏览器阻止自动播放，用户需手动点击播放
-            });
+            audio.play().catch(() => undefined);
           }
         }
       })
-      .catch(() => {
-        // fetch 失败（网络错误/后端不可达）：标记已加载，避免骨架永久占位
-        useMusicPlayer.setState({ musicLoaded: true, switching: false });
-      });
+      .catch(() => useMusicPlayer.setState({ musicLoaded: true, switching: false }));
   }, []);
 
-  // ===== 2. 绑定 audio 事件 → store =====
   useEffect(() => {
     const audio = getGlobalAudio();
     if (!audio) return;
-
     const onLoadStart = () => {
-      const st = useMusicPlayer.getState();
-      st.setSwitching(true);
-      st.setLoading(true);
-      st.setAudioError(false);
+      const state = useMusicPlayer.getState();
+      state.setSwitching(true);
+      state.setLoading(true);
+      state.setAudioError(false);
     };
     const onCanPlay = () => {
-      const st = useMusicPlayer.getState();
-      st.setSwitching(false);
-      st.setLoading(false);
+      const state = useMusicPlayer.getState();
+      state.setSwitching(false);
+      state.setLoading(false);
     };
     const onPlay = () => {
-      const st = useMusicPlayer.getState();
-      st.setPlaying(true);
-      st.setLoading(false);
-      st.setSwitching(false);
-      st.setAudioError(false);
+      const state = useMusicPlayer.getState();
+      state.setPlaying(true);
+      state.setLoading(false);
+      state.setSwitching(false);
+      state.setAudioError(false);
     };
-    const onPause = () => {
-      useMusicPlayer.getState().setPlaying(false);
-    };
-    const playPlaylistTrack = async (startIndex: number, play: boolean) => {
-      const initial = useMusicPlayer.getState();
-      const total = initial.playlist.length;
-      for (let offset = 0; offset < total; offset++) {
-        const index = (startIndex + offset) % total;
-        const prepared = await useMusicPlayer.getState().prepareTrack(index);
-        if (!prepared) continue;
-        audio.src = prepared.url;
-        if (play) {
-          try {
-            await audio.play();
-          } catch {
-            useMusicPlayer.getState().setAudioError(true, "播放地址已失效或被音源拒绝，请重试或切换曲目。");
-          }
-        } else {
-          audio.load();
-        }
-        return;
-      }
-      useMusicPlayer.getState().setPlaying(false);
-      useMusicPlayer.getState().setAudioError(true, "当前歌单没有可直连播放的曲目。");
+    const onPause = () => useMusicPlayer.getState().setPlaying(false);
+    const playTrack = (index: number, shouldPlay: boolean) => {
+      const prepared = useMusicPlayer.getState().prepareTrack(index);
+      if (!prepared) return false;
+      audio.src = prepared.url;
+      if (shouldPlay) audio.play().catch(() => useMusicPlayer.getState().setAudioError(true, "R2 音频文件无法播放，请稍后重试。"));
+      else audio.load();
+      return true;
     };
     const onEnded = () => {
-      const st = useMusicPlayer.getState();
-      // 动态音乐播完：回到歌单模式（不自动播放，但恢复音频源供用户继续播放）
-      if (st.activePostMusic) {
-        st.clear();
-        if (st.playlist.length > 0) {
-          void playPlaylistTrack(st.currentIndex, false);
-        }
-        st.setPlaying(false);
+      const state = useMusicPlayer.getState();
+      if (state.activePostMusic) {
+        state.clear();
+        if (state.playlist.length) playTrack(state.currentIndex, false);
         return;
       }
-      // 歌单模式：自动下一首；最多尝试歌单长度次，跳过不支持的来源。
-      if (st.playlist.length > 0) {
-        void playPlaylistTrack((st.currentIndex + 1) % st.playlist.length, true);
-      } else {
-        st.setPlaying(false);
-      }
+      if (state.playlist.length) playTrack((state.currentIndex + 1) % state.playlist.length, true);
     };
     const onError = () => {
-      const st = useMusicPlayer.getState();
-      st.setSwitching(false);
-      st.setLoading(false);
-      st.setAudioError(true, "播放地址已失效或被音源拒绝，请重试或切换曲目。");
-      st.setPlaying(false);
+      const state = useMusicPlayer.getState();
+      state.setSwitching(false);
+      state.setLoading(false);
+      state.setPlaying(false);
+      state.setAudioError(true, "R2 音频文件无法播放，请确认文件未被删除。");
     };
     const onWaiting = () => useMusicPlayer.getState().setLoading(true);
     const onPlaying = () => useMusicPlayer.getState().setLoading(false);
     const onTimeUpdate = () => {
-      const st = useMusicPlayer.getState();
-      const lc = st.lyric;
-      if (!lc || lc.length === 0) {
-        if (st.currentLyric !== "") st.setCurrentLyric("");
-        if (st.currentLyricIndex !== -1) st.setCurrentLyricIndex(-1);
-        return;
+      const state = useMusicPlayer.getState();
+      const lines = state.lyric;
+      if (!lines?.length) return;
+      const time = audio.currentTime * 1000;
+      let currentIndex = -1;
+      for (let index = lines.length - 1; index >= 0; index--) {
+        if (lines[index].timeMs <= time) { currentIndex = index; break; }
       }
-      const ms = audio.currentTime * 1000;
-      let line = "";
-      let idx = -1;
-      for (let i = lc.length - 1; i >= 0; i--) {
-        if (lc[i].timeMs <= ms) {
-          line = lc[i].text;
-          idx = i;
-          break;
-        }
-      }
-      if (st.currentLyric !== line) st.setCurrentLyric(line);
-      if (st.currentLyricIndex !== idx) st.setCurrentLyricIndex(idx);
+      const current = currentIndex >= 0 ? lines[currentIndex].text : "";
+      if (state.currentLyric !== current) state.setCurrentLyric(current);
+      if (state.currentLyricIndex !== currentIndex) state.setCurrentLyricIndex(currentIndex);
     };
-
     audio.addEventListener("loadstart", onLoadStart);
     audio.addEventListener("canplay", onCanPlay);
     audio.addEventListener("play", onPlay);
@@ -247,73 +153,15 @@ export default function GlobalMusicManager() {
     };
   }, []);
 
-  // ===== 3. 歌词 fetch：监听 activePostMusic 和 playlist[currentIndex] 变化 =====
-  const activePostMusic = useMusicPlayer((s) => s.activePostMusic);
-  const playlist = useMusicPlayer((s) => s.playlist);
-  const currentIndex = useMusicPlayer((s) => s.currentIndex);
-
+  const activePostMusic = useMusicPlayer((state) => state.activePostMusic);
+  const playlist = useMusicPlayer((state) => state.playlist);
+  const currentIndex = useMusicPlayer((state) => state.currentIndex);
   useEffect(() => {
-    // 确定当前需要获取歌词的曲目
-    let track: {
-      lrc?: string;
-      platform?: string;
-      musicId?: string;
-      neteaseId?: string;
-      extra?: Record<string, any>;
-      postId?: string;
-      id?: string;
-      lyric?: string;
-    } | null = null;
-
-    if (activePostMusic) {
-      track = activePostMusic;
-    } else if (playlist.length > 0 && currentIndex >= 0 && playlist[currentIndex]) {
-      track = playlist[currentIndex];
-    }
-
-    const st = useMusicPlayer.getState();
-    st.setLyric(null);
-    st.setCurrentLyric("");
-    st.setCurrentLyricIndex(-1);
-
-    if (!track) return;
-
-    // 优先用 lrc 字段（上传歌曲/歌单预置歌词），直接解析
-    if (track.lrc) {
-      st.setLyric(parseLyric(track.lrc));
-      return;
-    }
-    // 歌单模式：track.lyric 是原始 LRC 文本
-    if ((track as PlaylistTrack).lyric) {
-      st.setLyric(parseLyric((track as PlaylistTrack).lyric));
-      return;
-    }
-
-    // 异步获取歌词
-    const platform = track.platform || "netease";
-    const songId = track.musicId || track.neteaseId || track.id;
-    const trackPostId = track.postId;
-    if (!songId) return;
-
-    if (lyricAbortRef.current) lyricAbortRef.current.abort();
-    const ac = new AbortController();
-    lyricAbortRef.current = ac;
-
-    fetchLyric(platform, songId, track.extra, ac.signal).then((lrc) => {
-      if (!lrc) return;
-      const state = useMusicPlayer.getState();
-      // 确保仍是同一首曲目才写入
-      if (activePostMusic) {
-        if (state.activePostMusic?.postId === trackPostId) {
-          state.setLyric(parseLyric(lrc));
-        }
-      } else {
-        // 歌单模式：检查索引未变
-        if (state.currentIndex === currentIndex && !state.activePostMusic) {
-          state.setLyric(parseLyric(lrc));
-        }
-      }
-    });
+    const track = activePostMusic || playlist[currentIndex];
+    const state = useMusicPlayer.getState();
+    state.setLyric(parseLyric(track?.lrc || track?.lyric || ""));
+    state.setCurrentLyric("");
+    state.setCurrentLyricIndex(-1);
   }, [activePostMusic, playlist, currentIndex]);
 
   return null;

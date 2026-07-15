@@ -5,8 +5,9 @@
  */
 import { Router, Request, Response } from "express";
 import path from "path";
+import { Op } from "sequelize";
 import { param, validationResult } from "express-validator";
-import { Media, UploadIntent, User, getMediaCategory } from "../models";
+import { Media, MusicTrack, Post, UploadIntent, User, getMediaCategory } from "../models";
 import { authenticate, requireAdmin, AuthRequest } from "../middleware/auth";
 import { deleteStoredFile, isR2Ready } from "../services/storage-service";
 import {
@@ -274,6 +275,30 @@ router.delete(
     if (!media) {
       res.status(404).json({ message: "媒体文件不存在" });
       return;
+    }
+
+    const playlistReference = await MusicTrack.findOne({
+      where: { [Op.or]: [{ audioMediaId: media.id }, { coverMediaId: media.id }] },
+      attributes: ["id"],
+    });
+    if (playlistReference) {
+      res.status(409).json({ message: "该媒体正在被网站歌单使用，请先从歌单中移除或替换它" });
+      return;
+    }
+    const postReference = await Post.findOne({
+      where: { music: { [Op.ne]: null } },
+      attributes: ["id", "music"],
+    });
+    if (postReference) {
+      const posts = await Post.findAll({ where: { music: { [Op.ne]: null } }, attributes: ["id", "music"] });
+      const usedByPost = posts.some((post) => {
+        const music = post.music as any;
+        return music?.url === media.url || music?.cover === media.url;
+      });
+      if (usedByPost) {
+        res.status(409).json({ message: "该媒体正在被动态或文章音乐引用，请先移除对应音乐卡片" });
+        return;
+      }
     }
 
     // 删除 R2 对象失败不阻塞记录删除

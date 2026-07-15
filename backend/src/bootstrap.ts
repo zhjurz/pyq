@@ -1,12 +1,11 @@
 /**
- * 应用初始化（数据库连接 + 模型同步 + 插件预热 + 黑名单清理）
+ * 应用初始化（数据库连接 + 模型同步 + 黑名单清理）
  *
  * 传统部署（PM2/Docker）：src/index.ts 在进程启动时调用一次，随后常驻。
  * 生产 Vercel 实例只验证数据库连接并预热运行时状态；建表必须通过
  * `npm run db:sync` 在部署前受控执行，避免冷启动触发 DDL 竞争。
  */
 import { sequelize } from "./models";
-import { loadAllPlugins } from "./music-sources/mf-manager";
 
 let readyPromise: Promise<void> | null = null;
 
@@ -28,17 +27,6 @@ async function doBootstrap(): Promise<void> {
     if (cleaned > 0) console.log(`Cleaned ${cleaned} expired blacklist entries.`);
   } catch (e) {
     console.warn("Blacklist cleanup skipped:", (e as Error).message);
-  }
-
-  // 预热音源插件（从数据库加载，见 music-sources/mf-manager.ts）
-  try {
-    const result = await loadAllPlugins();
-    console.log(`[plugins] loaded ${result.loaded} music source plugin(s)`);
-    if (result.failed.length > 0) {
-      console.warn("[plugins] failed:", result.failed);
-    }
-  } catch (e) {
-    console.warn("[plugins] load failed:", (e as Error).message);
   }
 }
 
