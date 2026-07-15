@@ -12,7 +12,7 @@
     "db:reset-likes": "ts-node src/scripts/reset-likes.ts",
     "db:migrate-douban-cache": "ts-node src/scripts/migrate-douban-cache.ts",
     "music:migrate-r2": "ts-node src/scripts/migrate-r2-music.ts",
-    "postinstall": "patch-package"
+    "postinstall": "node src/scripts/patch-parseurl.js"
   },
   "keywords": [],
   "author": "",
@@ -34,7 +34,6 @@
     "multer": "^2.2.0",
     "mysql2": "^3.22.5",
     "nodemailer": "^9.0.3",
-    "patch-package": "^8.0.1",
     "sequelize": "^6.37.8",
     "slugify": "^1.6.9",
     "uuid": "^11.1.1"
