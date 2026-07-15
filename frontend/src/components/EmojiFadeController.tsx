@@ -13,6 +13,7 @@ export default function EmojiFadeController() {
   useEffect(() => {
     const CLASS = "inline-emoji";
     const LOADED = "emoji-loaded";
+    const ERROR = "emoji-error";
 
     const markLoaded = (img: HTMLImageElement) => {
       if (img.classList.contains(LOADED)) return;
@@ -28,7 +29,15 @@ export default function EmojiFadeController() {
       }
     };
 
+    const onError = (e: Event) => {
+      const t = e.target as Element;
+      if (t && t.tagName === "IMG" && t.classList.contains(CLASS)) {
+        t.classList.add(ERROR);
+      }
+    };
+
     document.addEventListener("load", onLoad, true);
+    document.addEventListener("error", onError, true);
 
     document.querySelectorAll<HTMLImageElement>(`img.${CLASS}`).forEach(markLoaded);
 
@@ -49,6 +58,7 @@ export default function EmojiFadeController() {
 
     return () => {
       document.removeEventListener("load", onLoad, true);
+      document.removeEventListener("error", onError, true);
       observer.disconnect();
     };
   }, []);

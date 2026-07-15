@@ -2,7 +2,7 @@ import { Router, Request, Response } from "express";
 import axios from "axios";
 import { SiteSetting } from "../models";
 import { authenticate, requireAdmin, AuthRequest } from "../middleware/auth";
-import { getDoubanData, DoubanCollection, DoubanItem } from "../services/douban-service";
+import { getDoubanData, DoubanCollection, DoubanItem, syncDoubanData } from "../services/douban-service";
 
 const router = Router();
 
@@ -134,6 +134,8 @@ router.get("/", async (req: Request, res: Response) => {
           typeCounts: { movie: 0, book: 0, music: 0 },
           statusCounts: { all: 0, collect: 0, do: 0, wish: 0 },
           syncedAt: "",
+          syncStatus: "never",
+          lastError: "",
           doubanId: "",
         });
       } else {
@@ -142,6 +144,8 @@ router.get("/", async (req: Request, res: Response) => {
           books: [],
           music: [],
           syncedAt: "",
+          syncStatus: "never",
+          lastError: "",
           doubanId: "",
         });
       }
@@ -202,6 +206,8 @@ router.get("/", async (req: Request, res: Response) => {
       typeCounts,
       statusCounts,
       syncedAt: wrapped.syncedAt,
+      syncStatus: wrapped.syncStatus || "never",
+      lastError: wrapped.lastError || "",
       doubanId: wrapped.doubanId,
     });
   } catch (err: any) {
@@ -224,10 +230,18 @@ router.post(
         });
         return;
       }
-      const data = await getDoubanData(doubanId, true);
-      res.json({
-        success: true,
-        message: `同步成功：电影 ${data.movies.length} 部，图书 ${data.books.length} 本，音乐 ${data.music.length} 张`,
+      const data = await syncDoubanData(doubanId);
+      const counts = `电影 ${data.movies.length} 部，图书 ${data.books.length} 本，音乐 ${data.music.length} 张`;
+      const status = data.syncStatus || "success";
+      const message = status === "success"
+        ? `同步成功：${counts}`
+        : status === "partial"
+          ? `部分同步成功：${counts}${data.lastError ? `（${data.lastError}）` : ""}`
+          : `同步失败，已保留上次成功数据：${counts}${data.lastError ? `（${data.lastError}）` : ""}`;
+      res.status(status === "failed" ? 502 : 200).json({
+        success: status !== "failed",
+        partial: status === "partial",
+        message,
         data: wrapCollectionCovers(data),
       });
     } catch (err: any) {
@@ -238,5 +252,30 @@ router.post(
     }
   }
 );
+
+// POST /api/douban/cron-sync - protected scheduler endpoint
+router.post("/cron-sync", async (req: Request, res: Response) => {
+  const expectedSecret = process.env.CRON_SECRET;
+  const suppliedSecret = req.headers.authorization?.replace(/^Bearer\s+/i, "") || req.headers["x-cron-secret"];
+  if (!expectedSecret || suppliedSecret !== expectedSecret) {
+    res.status(401).json({ message: "未授权的同步请求" });
+    return;
+  }
+
+  const doubanId = await getDoubanId();
+  if (!doubanId) {
+    res.status(400).json({ message: "未配置豆瓣 ID" });
+    return;
+  }
+  const data = await syncDoubanData(doubanId);
+  res.status(data.syncStatus === "failed" ? 502 : 200).json({
+    success: data.syncStatus !== "failed",
+    syncStatus: data.syncStatus,
+    movies: data.movies.length,
+    books: data.books.length,
+    music: data.music.length,
+    lastError: data.lastError || "",
+  });
+});
 
 export default router;

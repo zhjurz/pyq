@@ -9,5 +9,8 @@
       "maxDuration": 30,
       "memory": 1024
     }
-  }
+  },
+  "crons": [
+    { "path": "/api/douban/cron-sync", "schedule": "17 * * * *" }
+  ]
 }

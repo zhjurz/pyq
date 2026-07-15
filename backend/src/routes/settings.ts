@@ -3,7 +3,7 @@ import { body, validationResult } from "express-validator";
 import { SiteSetting, User } from "../models";
 import { siteSettingTextDefaults } from "../models/SiteSetting";
 import { authenticate, requireAdmin, AuthRequest } from "../middleware/auth";
-import { sendTestEmail } from "../services/email-service";
+import { sendTestEmail, DEFAULT_EMAIL_TEMPLATE } from "../services/email-service";
 
 const router = Router();
 
@@ -151,6 +151,13 @@ router.put(
     });
   }
 );
+
+// GET /api/settings/default-template - built-in email HTML (admin only)
+router.get("/default-template", authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
+  res.send(DEFAULT_EMAIL_TEMPLATE);
+});
 
 // GET /api/settings/email-config - email config (admin only, includes smtpPass)
 router.get("/email-config", authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {

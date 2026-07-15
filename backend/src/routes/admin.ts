@@ -253,6 +253,28 @@ router.post(
   }
 );
 
+// 管理端评论响应，供列表与编辑成功响应共用，避免字段漂移。
+function formatAdminComment(c: any) {
+  return {
+    id: c.id,
+    author: c.authorName,
+    email: c.email,
+    website: c.website,
+    content: c.content,
+    replyTo: c.replyTo,
+    replyToId: c.replyToId,
+    region: c.region || "",
+    createdAt: c.createdAt,
+    post: c.post
+      ? {
+          id: c.post.id,
+          content: c.post.content?.slice(0, 50) || "",
+          author: c.post.author?.nickname || "",
+        }
+      : null,
+  };
+}
+
 // GET /api/admin/comments - list all comments with post info
 router.get("/comments", authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
   const comments = await Comment.findAll({
@@ -269,27 +291,52 @@ router.get("/comments", authenticate, requireAdmin, async (_req: AuthRequest, re
     order: [["createdAt", "DESC"]],
   });
 
-  res.json(
-    comments.map((c) => ({
-      id: c.id,
-      author: c.authorName,
-      email: c.email,
-      website: c.website,
-      content: c.content,
-      replyTo: c.replyTo,
-      replyToId: c.replyToId,
-      region: c.region || "",
-      createdAt: c.createdAt,
-      post: c.post
-        ? {
-            id: c.post.id,
-            content: c.post.content?.slice(0, 50) || "",
-            author: c.post.author?.nickname || "",
-          }
-        : null,
-    }))
-  );
+  res.json(comments.map(formatAdminComment));
 });
+
+
+// PUT /api/admin/comments/:id - edit a comment (admin only)
+router.put(
+  "/comments/:id",
+  authenticate,
+  requireAdmin,
+  [
+    param("id").isUUID(),
+    body("author").trim().isLength({ min: 1, max: 100 }),
+    body("email").trim().isEmail().normalizeEmail(),
+    body("website").optional({ nullable: true }).trim().isLength({ max: 255 }),
+    body("content").trim().isLength({ min: 1, max: 10000 }),
+  ],
+  async (req: AuthRequest, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      res.status(400).json({ errors: errors.array() });
+      return;
+    }
+
+    const comment = await Comment.findByPk(req.params.id as string, {
+      include: [{
+        model: Post,
+        as: "post",
+        attributes: ["id", "content"],
+        include: [{ model: User, as: "author", attributes: ["nickname"] }],
+      }],
+    });
+    if (!comment) {
+      res.status(404).json({ message: "评论不存在" });
+      return;
+    }
+
+    await comment.update({
+      authorName: req.body.author.trim(),
+      email: req.body.email.trim().toLowerCase(),
+      website: req.body.website?.trim() || undefined,
+      content: req.body.content.trim(),
+    });
+
+    res.json(formatAdminComment(comment));
+  }
+);
 
 // DELETE /api/admin/comments/:id - delete a comment
 router.delete(

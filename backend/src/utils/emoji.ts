@@ -119,6 +119,11 @@ const EMOJI_FILE_MAP: Record<string, string> = {
   "2炸弹": "2炸弹.gif",
 };
 
+/** 将逻辑文件名转换为 public/emoji 中的真实编码文件名。 */
+function emojiAssetFilename(logicalFilename: string): string {
+  return logicalFilename.replace(/[^\x00-\x7F]/g, (char) => `#U${char.codePointAt(0)!.toString(16)}`);
+}
+
 /**
  * 将文本中的 [表情名] 短代码替换为 img 标签（用于邮件 HTML）。
  * 生成绝对 URL，因为邮件客户端无法访问相对路径。
@@ -129,6 +134,6 @@ export function replaceEmojiShortcodes(text: string, domain: string): string {
   return text.replace(/\[([^\]]+)\]/g, (match, name) => {
     const file = EMOJI_FILE_MAP[name];
     if (!file) return match;
-    return '<img src="' + base + "/emoji/" + file + '" alt="' + name + '" style="height:1.4em;vertical-align:text-bottom;" />';
+    return '<img src="' + base + "/emoji/" + encodeURIComponent(emojiAssetFilename(file)) + '" alt="' + name + '" style="height:1.4em;vertical-align:text-bottom;" />';
   });
 }

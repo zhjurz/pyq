@@ -196,7 +196,7 @@ export default function AdminAds() {
       adNickname: form.adNickname,
       content: form.content,
       images: form.images,
-      linkCard: form.linkCard,
+      linkCard: form.linkCard ?? undefined,
     };
     if (isEdit) {
       body.likesDisabled = form.likesDisabled;

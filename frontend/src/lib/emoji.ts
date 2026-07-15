@@ -4,7 +4,7 @@ export interface EmojiItem {
   url: string;
 }
 
-export const EMOJI_LIST: EmojiItem[] = [
+const EMOJI_FILES: EmojiItem[] = [
   { name: "啊", file: "1啊.gif", url: "/emoji/1啊.gif" },
   { name: "啊啊啊", file: "1啊啊啊.gif", url: "/emoji/1啊啊啊.gif" },
   { name: "拜拜", file: "1拜拜.gif", url: "/emoji/1拜拜.gif" },
@@ -115,6 +115,21 @@ export const EMOJI_LIST: EmojiItem[] = [
   { name: "2元宝", file: "2元宝.gif", url: "/emoji/2元宝.gif" },
   { name: "2炸弹", file: "2炸弹.gif", url: "/emoji/2炸弹.gif" },
 ];
+
+/** 静态资源中的中文文件名使用 #U + Unicode 十六进制编码。 */
+export function getEmojiAssetFilename(logicalFilename: string): string {
+  return logicalFilename.replace(/[^\x00-\x7F]/g, (char) => `#U${char.codePointAt(0)!.toString(16)}`);
+}
+
+export function getEmojiAssetUrl(logicalFilename: string): string {
+  return `/emoji/${encodeURIComponent(getEmojiAssetFilename(logicalFilename))}`;
+}
+
+export const EMOJI_LIST: EmojiItem[] = EMOJI_FILES.map(({ name, file }) => ({
+  name,
+  file,
+  url: getEmojiAssetUrl(file),
+}));
 
 const EMOJI_MAP = new Map(EMOJI_LIST.map((e) => [e.name, e]));
 

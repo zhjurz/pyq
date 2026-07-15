@@ -24,6 +24,19 @@ export interface ParsedVideo {
   source: "parse";
 }
 
+const VIDEO_HOST_SUFFIXES = [
+  "douyin.com", "douyinvod.com", "snssdk.com", "bytecdntp.com", "bytecdn.com", "aweme.com",
+  "zjcdn.com", "bytegoofy.com", "pstatp.com", "ixigua.com", "byteimg.com", "douyinpic.com", "byteoss.com",
+  "kuaishou.com", "kwaicdn.com", "chenzhongtech.com", "yximgs.com",
+  "xiaohongshu.com", "xhslink.com", "xhscdn.com", "weibo.com", "weibo.cn", "sinacn.com", "sinaimg.cn",
+  "hdslb.com", "bilivideo.com", "bugpk.com",
+];
+
+function matchesVideoHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/\.$/, "");
+  return VIDEO_HOST_SUFFIXES.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
+}
+
 /** 判断是否为 B 站链接（B站走 iframe 嵌入，不经过此接口） */
 function isBilibili(url: string): boolean {
   return /bilibili\.com|b23\.tv/i.test(url);
@@ -33,7 +46,7 @@ function isBilibili(url: string): boolean {
 function inferPlatform(url: string): string {
   const u = url.toLowerCase();
   if (/douyin\.com|iesdouyin\.com|v\.douyin\.com/.test(u)) return "douyin";
-  if (/kuaishou\.com|chenzhongtech\.com/.test(u)) return "kuaishou";
+  if (/kuaishou\.com|kwaicdn\.com|chenzhongtech\.com|yximgs\.com/.test(u)) return "kuaishou";
   if (/xiaohongshu\.com|xhslink\.com/.test(u)) return "xhs";
   if (/weibo\.(com|cn)|t\.cn/.test(u)) return "weibo";
   return "unknown";
@@ -52,8 +65,7 @@ function inferReferer(hostname: string): string {
 
 /** 检查是否为允许的视频 CDN 域名（防止被滥用为开放代理） */
 function isAllowedVideoHost(hostname: string): boolean {
-  const h = hostname.toLowerCase();
-  return /douyin|douyinvod|snssdk|bytecdntp|bytecdn|aweme|zjcdn|bytegoofy|pstatp|ixigua|byteimg|douyinpic|byteoss|kuaishou|kwaicdn|chenzhongtech|yximgs|xhs|xhscdn|xiaohongshu|weibo|sinacn|sinaimg|hdslb|bilivideo|bugpk/.test(h);
+  return matchesVideoHost(hostname);
 }
 
 /**
@@ -296,15 +308,24 @@ router.get("/proxy", async (req: Request, res: Response) => {
   if (referer) headers["Referer"] = referer;
   if (range) headers["Range"] = range;
 
+  const startedAt = Date.now();
   try {
     const resp = await axios.get(url, {
       responseType: "stream",
-      timeout: 15000,
+      timeout: 20_000,
       maxRedirects: 5,
       headers,
+      // Redirects can leave the initial CDN. Keep the proxy closed after each redirect.
+      beforeRedirect: (options) => {
+        if (!options.hostname || !isAllowedVideoHost(options.hostname)) {
+          throw new Error("重定向到了不允许的视频域名");
+        }
+      },
       // stream 模式下 axios 不会对 4xx/5xx 抛错，需手动 validateStatus
       validateStatus: () => true,
     });
+    const upstreamHost = new URL(resp.request?.res?.responseUrl || url).hostname;
+    console.log(`[video-proxy] upstream=${upstreamHost} status=${resp.status} range=${range || "none"} headerMs=${Date.now() - startedAt}`);
 
     // 上游返回 4xx/5xx：链接过期或防盗链拒绝，不 pipe 错误响应体
     if (resp.status >= 400) {
@@ -328,12 +349,16 @@ router.get("/proxy", async (req: Request, res: Response) => {
     res.setHeader("Accept-Ranges", "bytes");
     res.setHeader("Cache-Control", "public, max-age=86400");
 
-    resp.data.pipe(res);
-
-    // 客户端断开连接时清理上游流
-    req.on("close", () => {
-      resp.data.destroy();
+    const destroyUpstream = () => {
+      if (!resp.data.destroyed) resp.data.destroy();
+    };
+    res.on("close", destroyUpstream);
+    resp.data.once("error", (streamError: Error) => {
+      console.log(`[video-proxy] 流错误：${parsedUrl.hostname} - ${streamError.message}`);
+      if (!res.headersSent) res.status(502).json({ message: "视频流中断，请重新解析" });
+      else res.destroy(streamError);
     });
+    resp.data.pipe(res);
   } catch (err: any) {
     console.log(`[video-proxy] 请求异常：${parsedUrl.hostname} - ${err?.message || err}`);
     if (!res.headersSent) {

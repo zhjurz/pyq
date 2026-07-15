@@ -7,7 +7,6 @@ import { Heart, Share2, MessageCircle, ExternalLink } from "lucide-react";
 import { Post, formatArticleTime } from "@/lib/mock-data";
 import { resolveAvatar } from "@/lib/avatar";
 import { getCurrentUser, authFetchHeaders } from "@/lib/auth";
-import { useEditPost } from "@/lib/edit-post-store";
 import { useSiteSettings } from "@/lib/site-settings-store";
 import ArticleCommentSection from "@/components/article/ArticleCommentSection";
 import ArticleEmbedContent from "@/components/article/ArticleEmbedContent";
@@ -47,21 +46,7 @@ export default function ArticleReader({ post }: ArticleReaderProps) {
   const [liking, setLiking] = useState(false);
   const [comments, setComments] = useState(post.comments || []);
   const [viewCount, setViewCount] = useState(post.viewCount || 0);
-  const [canEdit, setCanEdit] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [pinned, setPinned] = useState(!!post.pinned);
   const [focusSignal, setFocusSignal] = useState(0);
-  const openEdit = useEditPost((s) => s.open);
-
-  useEffect(() => {
-    const user = getCurrentUser();
-    if (user?.isLoggedIn) {
-      setIsAdmin(true);
-      const sameEmail = !!(post.author.email && user.email && user.email === post.author.email);
-      const sameNickname = post.author.nickname === user.nickname;
-      setCanEdit(sameEmail || sameNickname);
-    }
-  }, [post.author.email, post.author.nickname]);
 
   useEffect(() => {
     setLiked(!!post.meLiked);
@@ -172,10 +157,6 @@ export default function ArticleReader({ post }: ArticleReaderProps) {
 
   const handleCommentsChange = (next: typeof comments) => {
     setComments(next);
-  };
-
-  const handleEdit = () => {
-    openEdit(post);
   };
 
   const authorName = post.author.nickname || "博主";

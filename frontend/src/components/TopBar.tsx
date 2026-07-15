@@ -1259,7 +1259,6 @@ export function PublishModal({
       if (res.ok) {
         const data = await res.json();
         setVideo({ ...data, source: "parse" });
-        setImages([]);
       } else {
         const err = await res.json().catch(() => ({ message: "解析失败" }));
         setError(err.message || "解析失败");
@@ -1279,7 +1278,6 @@ export function PublishModal({
       const url = await uploadOne(file, "video");
       if (url) {
         setVideo({ url, source: "upload", platform: "upload" });
-        setImages([]);
       }
     } finally {
       setVideoUploading(false);
@@ -1287,7 +1285,7 @@ export function PublishModal({
   };
 
   const handleSubmit = async () => {
-    if (isContentEmpty(content) && images.length === 0 && !music && !linkCard && !video && !douban) return;
+    if (!hasPublishableContent) return;
     setSubmitting(true);
     setError("");
     try {
@@ -1299,11 +1297,11 @@ export function PublishModal({
       const payload = isEdit
         ? {
             content: isContentEmpty(content) ? "" : content,
-            images: video ? [] : (images.length > 0 ? images : []),
+            images: uploadMode === "video" ? [] : (images.length > 0 ? images : []),
             location: location || null,
             music: music || null,
             linkCard: linkCard || null,
-            video: video || null,
+            video: uploadMode === "video" ? video : null,
             douban: douban || null,
             isAd,
             likesDisabled,
@@ -1311,11 +1309,11 @@ export function PublishModal({
           }
         : {
             content: isContentEmpty(content) ? undefined : content,
-            images: video ? [] : (images.length > 0 ? images : undefined),
+            images: uploadMode === "video" ? [] : (images.length > 0 ? images : undefined),
             location: location || undefined,
             music: music || undefined,
             linkCard: linkCard || undefined,
-            video: video || undefined,
+            video: uploadMode === "video" ? video || undefined : undefined,
             douban: douban || undefined,
             isAd,
             likesDisabled,
@@ -1350,6 +1348,10 @@ export function PublishModal({
     }
   };
 
+  const activeImages = uploadMode === "video" ? [] : images;
+  const activeVideo = uploadMode === "video" ? video : null;
+  const hasActiveMedia = activeImages.length > 0 || !!activeVideo;
+  const hasPublishableContent = !isContentEmpty(content) || hasActiveMedia || !!music || !!linkCard || !!douban;
   const imgCount = images.length;
   const audioBase = API_URL.replace("/api", "");
   const { closing, handleClose } = useExitAnimation(onClose, 250);
@@ -1368,7 +1370,7 @@ export function PublishModal({
         </button>
         <button
           onClick={handleSubmit}
-          disabled={submitting || (isContentEmpty(content) && images.length === 0 && !music && !linkCard && !video && !douban)}
+          disabled={submitting || !hasPublishableContent}
           className="rounded-md px-4 py-1.5 text-sm font-medium transition-colors disabled:bg-wechat-bubble disabled:text-wechat-time enabled:bg-green-500 enabled:text-white enabled:hover:bg-green-600 dark:disabled:bg-white/5 dark:disabled:text-gray-500"
         >
           {submitting ? (isEdit ? "保存中" : "发表中") : isEdit ? "保存" : "发表"}
@@ -1396,7 +1398,6 @@ export function PublishModal({
             type="button"
             onClick={() => {
               setUploadMode("normal");
-              setVideo(null);
             }}
             className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-xs transition-colors ${
               uploadMode === "normal"
@@ -1411,7 +1412,6 @@ export function PublishModal({
             type="button"
             onClick={() => {
               setUploadMode("live");
-              setVideo(null);
             }}
             className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-xs transition-colors ${
               uploadMode === "live"
@@ -1426,7 +1426,6 @@ export function PublishModal({
             type="button"
             onClick={() => {
               setUploadMode("video");
-              setImages([]);
             }}
             className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-xs transition-colors ${
               uploadMode === "video"
@@ -1738,7 +1737,6 @@ export function PublishModal({
                   onClick={() => {
                     if (!videoDirectUrl.trim()) return;
                     setVideo({ url: videoDirectUrl.trim(), cover: videoDirectCover.trim() || undefined, source: "url", platform: "url" });
-                    setImages([]);
                   }}
                   disabled={!videoDirectUrl.trim()}
                   className="rounded-md px-3 py-1.5 text-xs font-medium transition-colors disabled:bg-wechat-bubble disabled:text-wechat-time enabled:bg-green-500 enabled:text-white enabled:hover:bg-green-600 dark:disabled:bg-white/5 dark:disabled:text-gray-500"
@@ -1763,7 +1761,6 @@ export function PublishModal({
                   onClick={() => {
                     if (!embedCode.trim()) return;
                     setVideo({ embedCode: embedCode.trim(), source: "embed", platform: "bilibili" });
-                    setImages([]);
                   }}
                   disabled={!embedCode.trim()}
                   className="rounded-md px-3 py-1.5 text-xs font-medium transition-colors disabled:bg-wechat-bubble disabled:text-wechat-time enabled:bg-green-500 enabled:text-white enabled:hover:bg-green-600 dark:disabled:bg-white/5 dark:disabled:text-gray-500"

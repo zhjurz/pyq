@@ -111,7 +111,7 @@ export default function DoubanConfigSection() {
             className="w-full rounded-lg border border-adm-border bg-adm-input px-3 py-2.5 text-sm text-adm-text placeholder:text-adm-text-tertiary focus:border-adm-primary focus:outline-none focus:ring-1 focus:ring-adm-primary"
           />
           <p className="mt-1.5 text-xs text-adm-text-tertiary">
-            数据每小时自动刷新一次（缓存 30 分钟）。保存后可点击下方按钮立即同步。
+            数据会持久保留最后一次成功快照，并由每小时定时任务更新。保存后可点击下方按钮立即同步；如豆瓣临时不可用，会明确显示部分同步或保留旧数据的状态。
           </p>
 
           <div className="mt-4 flex flex-wrap items-center gap-2">

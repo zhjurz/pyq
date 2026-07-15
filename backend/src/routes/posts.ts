@@ -549,11 +549,12 @@ router.put(
       ? await validateR2MusicPayload(req.body.music, req.user!.id)
       : post.music;
 
-    // 广告不允许置顶：即使传入 pinned=true 也强制为 false
+    const finalIsAd = req.body.isAd !== undefined ? req.body.isAd : post.isAd;
     const incomingPinned = req.body.pinned;
-    const finalPinned =
-      incomingPinned !== undefined
-        ? (post.isAd ? false : incomingPinned)
+    const finalPinned = finalIsAd
+      ? false
+      : incomingPinned !== undefined
+        ? incomingPinned
         : post.pinned;
 
     await post.update({
@@ -572,7 +573,7 @@ router.put(
       linkCard: req.body.linkCard !== undefined ? req.body.linkCard : post.linkCard,
       video: req.body.video !== undefined ? req.body.video : post.video,
       douban: req.body.douban !== undefined ? req.body.douban : post.douban,
-      isAd: req.body.isAd !== undefined ? req.body.isAd : post.isAd,
+      isAd: finalIsAd,
       likesDisabled: req.body.likesDisabled !== undefined ? req.body.likesDisabled : post.likesDisabled,
       commentsDisabled: req.body.commentsDisabled !== undefined ? req.body.commentsDisabled : post.commentsDisabled,
       pinned: finalPinned,

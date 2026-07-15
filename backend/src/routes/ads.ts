@@ -21,11 +21,21 @@ function formatAd(post: any, meLiked = false) {
   if (typeof images === "string") {
     try { images = JSON.parse(images); } catch { images = []; }
   }
+  let video = post.video;
+  if (typeof video === "string") {
+    try { video = JSON.parse(video); } catch { video = null; }
+  }
+  let location = post.location;
+  if (typeof location === "string") {
+    try { location = JSON.parse(location); } catch { location = null; }
+  }
   return {
     id: post.id,
     content: post.content,
     images,
     linkCard: linkCard || null,
+    location: location || null,
+    video: video || null,
     isAd: true,
     adAvatar: post.adAvatar || "",
     adNickname: post.adNickname || "",
@@ -100,7 +110,9 @@ router.post(
     body("adNickname").trim().isLength({ min: 1, max: 100 }),
     body("content").optional().trim(),
     body("images").optional().isArray(),
-    body("linkCard").optional().isObject(),
+    body("linkCard").optional({ nullable: true }).isObject(),
+    body("location").optional({ nullable: true }).isObject(),
+    body("video").optional({ nullable: true }).isObject(),
   ],
   async (req: AuthRequest, res: Response) => {
     const errors = validationResult(req);
@@ -109,7 +121,14 @@ router.post(
       return;
     }
 
-    const { adAvatar, adNickname, content = "", images = [], linkCard = null } = req.body;
+    const { adAvatar, adNickname, content = "", images = [], linkCard = null, location = null, video = null } = req.body;
+    const hasContent = Boolean(
+      content.trim() || images.length > 0 || linkCard || location || video
+    );
+    if (!hasContent) {
+      res.status(400).json({ message: "请至少填写广告内容、图片、链接卡片、视频或地点之一" });
+      return;
+    }
     let post: Post | null = null;
     for (let attempt = 0; attempt < 5; attempt++) {
       try {
@@ -118,10 +137,10 @@ router.post(
           shortId: generateShortId(),
           content,
           images,
-          location: null,
+          location,
           music: null,
           linkCard,
-          video: null,
+          video,
           pinned: false,
           isAd: true,
           adAvatar,
@@ -154,6 +173,8 @@ router.put(
     body("content").optional({ nullable: true }).trim(),
     body("images").optional({ nullable: true }).isArray(),
     body("linkCard").optional({ nullable: true }).isObject(),
+    body("location").optional({ nullable: true }).isObject(),
+    body("video").optional({ nullable: true }).isObject(),
     body("likesDisabled").optional({ nullable: true }).isBoolean(),
     body("commentsDisabled").optional({ nullable: true }).isBoolean(),
   ],
@@ -176,6 +197,8 @@ router.put(
       content: req.body.content ?? post.content,
       images: req.body.images ?? post.images,
       linkCard: req.body.linkCard !== undefined ? req.body.linkCard : post.linkCard,
+      location: req.body.location !== undefined ? req.body.location : post.location,
+      video: req.body.video !== undefined ? req.body.video : post.video,
       likesDisabled: req.body.likesDisabled !== undefined ? req.body.likesDisabled : post.likesDisabled,
       commentsDisabled: req.body.commentsDisabled !== undefined ? req.body.commentsDisabled : post.commentsDisabled,
     });

@@ -39,6 +39,14 @@ interface SiteSettingAttributes {
   rssIncludeMoments: boolean;
   /** 豆瓣用户 ID，用于抓取电影/图书/音乐收藏 */
   doubanId: string;
+  /** 最后一次成功/部分成功的豆瓣快照 JSON */
+  doubanCache: string | null;
+  /** 最近一次同步状态（success / partial / failed） */
+  doubanSyncStatus: string;
+  /** 最近一次成功同步时间 */
+  doubanSyncedAt: Date | null;
+  /** 最近一次同步错误的安全摘要 */
+  doubanLastError: string | null;
   /** 评论违禁词列表，JSON 数组字符串 */
   bannedWords: string | null;
   /** 进入网站是否自动播放歌单音乐 */
@@ -47,7 +55,7 @@ interface SiteSettingAttributes {
 
 interface SiteSettingCreationAttributes extends Optional<
   SiteSettingAttributes,
-  "id" | "siteName" | "description" | "keywords" | "domain" | "beian" | "faviconUrl" | "ogImage" | "backgroundImages" | "darkModeEnabled" | "darkModeStartTime" | "darkModeEndTime" | "emailNotifyEnabled" | "notifyEmail" | "smtpHost" | "smtpPort" | "smtpSecure" | "smtpUser" | "smtpPass" | "smtpFrom" | "emailTemplate" | "amapJsKey" | "amapSecurityJsCode" | "amapKey" | "beianUrl" | "socialLinks" | "postCollapseLength" | "fontUrl" | "adOnArchives" | "commentAntiSpamEnabled" | "rssEnabled" | "rssIncludeMoments" | "doubanId" | "bannedWords" | "musicAutoplay"
+  "id" | "siteName" | "description" | "keywords" | "domain" | "beian" | "faviconUrl" | "ogImage" | "backgroundImages" | "darkModeEnabled" | "darkModeStartTime" | "darkModeEndTime" | "emailNotifyEnabled" | "notifyEmail" | "smtpHost" | "smtpPort" | "smtpSecure" | "smtpUser" | "smtpPass" | "smtpFrom" | "emailTemplate" | "amapJsKey" | "amapSecurityJsCode" | "amapKey" | "beianUrl" | "socialLinks" | "postCollapseLength" | "fontUrl" | "adOnArchives" | "commentAntiSpamEnabled" | "rssEnabled" | "rssIncludeMoments" | "doubanId" | "doubanCache" | "doubanSyncStatus" | "doubanSyncedAt" | "doubanLastError" | "bannedWords" | "musicAutoplay"
 > {}
 
 class SiteSetting
@@ -87,6 +95,10 @@ class SiteSetting
   declare rssEnabled: boolean;
   declare rssIncludeMoments: boolean;
   declare doubanId: string;
+  declare doubanCache: string | null;
+  declare doubanSyncStatus: string;
+  declare doubanSyncedAt: Date | null;
+  declare doubanLastError: string | null;
   declare bannedWords: string | null;
   declare musicAutoplay: boolean;
   declare readonly createdAt: Date;
@@ -257,6 +269,26 @@ SiteSetting.init(
       type: DataTypes.STRING(100),
       allowNull: false,
       defaultValue: "",
+    },
+    doubanCache: {
+      type: DataTypes.TEXT("medium"),
+      allowNull: true,
+      defaultValue: null,
+    },
+    doubanSyncStatus: {
+      type: DataTypes.STRING(20),
+      allowNull: false,
+      defaultValue: "never",
+    },
+    doubanSyncedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      defaultValue: null,
+    },
+    doubanLastError: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      defaultValue: null,
     },
     bannedWords: {
       type: DataTypes.TEXT,

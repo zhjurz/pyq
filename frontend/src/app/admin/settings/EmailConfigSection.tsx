@@ -132,11 +132,15 @@ export default function EmailConfigSection() {
   const handleLoadDefault = async () => {
     try {
       const res = await apiFetch("/settings/default-template");
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.message || "加载默认模板失败");
+      }
       const html = await res.text();
       setConfig({ ...config, emailTemplate: html, isDefaultTemplate: false });
       setShowTemplate(true);
-    } catch {
-      alert("加载默认模板失败");
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "加载默认模板失败");
     }
   };
 

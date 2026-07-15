@@ -1,0 +1,30 @@
+diff --git a/node_modules/parseurl/index.js b/node_modules/parseurl/index.js
+index ece7223..8356bab 100644
+--- a/node_modules/parseurl/index.js
++++ b/node_modules/parseurl/index.js
+@@ -12,9 +12,22 @@
+  * @private
+  */
+
+-var url = require('url')
+-var parse = url.parse
+-var Url = url.Url
++var Url = require('url').Url
++
++function parse (str) {
++  var parsed = new URL(str, 'http://parseurl.invalid')
++  var url = Url !== undefined ? new Url() : {}
++  var isAbsolute = /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(str) || str.slice(0, 2) === '//'
++
++  url.href = str
++  url.pathname = parsed.pathname
++  url.search = parsed.search || null
++  url.query = parsed.search ? parsed.search.slice(1) : null
++  url.hash = parsed.hash || null
++  url.path = isAbsolute ? null : parsed.pathname + parsed.search
++
++  return url
++}
+
+ /**
+  * Module exports.

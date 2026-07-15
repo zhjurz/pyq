@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useEffect, useLayoutEffect, useRef, useState, useCallback } from "react";
 import { Comment } from "@/lib/mock-data";
 import { cravatarUrl } from "@/lib/avatar";
-import { getCurrentUser, CurrentUser } from "@/lib/auth";
+import { getCurrentUser, CurrentUser, authFetchHeaders } from "@/lib/auth";
 import { X, Smile, ChevronDown, ChevronUp } from "lucide-react";
 import { EMOJI_LIST, editableToShortcode } from "@/lib/emoji";
 
@@ -16,6 +16,8 @@ interface CommentSectionProps {
   initialReplyTo?: string;
   onReplyCleared?: () => void;
   onCommentAdded?: (comment: Comment) => void;
+  /** 评论成功并清空编辑状态后调用；用于朋友圈式收起输入框 */
+  onCommentSubmitted?: () => void;
   /** 紧跟在 InteractionBubble 下方时为 true，去掉上边距和顶部圆角，视觉上合为一体 */
   connected?: boolean;
   /** 挂载时自动聚焦编辑器（详情页点击"评论"按钮后直接弹出手机键盘） */
@@ -40,6 +42,7 @@ export default function CommentSection({
   initialReplyTo,
   onReplyCleared,
   onCommentAdded,
+  onCommentSubmitted,
   connected = false,
   autoFocus = false,
 }: CommentSectionProps) {
@@ -145,7 +148,8 @@ export default function CommentSection({
     try {
       const res = await fetch(`${API_URL}/posts/${postId}/comments`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authFetchHeaders() },
+        credentials: "include",
         body: JSON.stringify({
           authorName,
           email: authorEmail,
@@ -191,6 +195,7 @@ export default function CommentSection({
       setContent("");
       setReplyTo(undefined);
       onReplyCleared?.();
+      onCommentSubmitted?.();
     } catch {
       setError("发送失败，请重试");
     } finally {

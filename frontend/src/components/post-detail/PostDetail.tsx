@@ -450,7 +450,10 @@ export default function PostDetail({ post }: PostDetailProps) {
               initialReplyTo={replyTo}
               onReplyCleared={() => setReplyTo(undefined)}
               onCommentAdded={(c) => setComments((prev) => [...prev, c])}
-              connected={likes.length > 0 || comments.length > 0}
+              onCommentSubmitted={() => {
+                setReplyTo(undefined);
+                setShowComments(false);
+              }}
               autoFocus
             />
           )}
