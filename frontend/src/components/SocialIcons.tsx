@@ -166,12 +166,25 @@ export const SOCIAL_PLATFORMS: SocialPlatform[] = [
     ),
   },
   {
-    type: "email",
-    label: "邮箱",
-    color: "#EA4335",
+    type: "kaiwang",
+    label: "开往",
+    color: "var(--wechat-link, #576b95)",
+    darkColor: "var(--wechat-link, #7d8fc4)",
     icon: ({ className }) => (
       <Base className={className}>
-        <path d="M2 4h20a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zm10 7L3.5 6h17L12 11zm0 2.5L3 7.5V18h18V7.5l-9 6z" />
+        <path d="M7 2.5A4.5 4.5 0 0 0 2.5 7v8.5A4.5 4.5 0 0 0 7 20h.38l-1.6 1.6a1 1 0 1 0 1.42 1.4L10.18 20h3.64l2.98 3a1 1 0 1 0 1.42-1.4L16.62 20H17a4.5 4.5 0 0 0 4.5-4.5V7A4.5 4.5 0 0 0 17 2.5H7zm0 2h10A2.5 2.5 0 0 1 19.5 7v5.5h-15V7A2.5 2.5 0 0 1 7 4.5zm-2.5 10h15v1A2.5 2.5 0 0 1 17 18H7a2.5 2.5 0 0 1-2.5-2.5v-1zm3 1a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5zm9 0a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5z" />
+        <path d="M7.5 7h9v3h-9z" opacity=".35" />
+      </Base>
+    ),
+  },
+  {
+    type: "email",
+    label: "邮箱",
+    color: "var(--wechat-link, #576b95)",
+    darkColor: "var(--wechat-link, #7d8fc4)",
+    icon: ({ className }) => (
+      <Base className={className}>
+        <path d="M4.5 4.5A2.5 2.5 0 0 0 2 7v10a2.5 2.5 0 0 0 2.5 2.5h15A2.5 2.5 0 0 0 22 17V7a2.5 2.5 0 0 0-2.5-2.5h-15zm0 2h15c.2 0 .38.08.53.2L12 12.83 3.97 6.7c.15-.12.33-.2.53-.2zm-.5 2.7 6.79 5.18a2 2 0 0 0 2.42 0L20 9.2V17c0 .28-.22.5-.5.5h-15A.5.5 0 0 1 4 17V9.2z" />
       </Base>
     ),
   },
