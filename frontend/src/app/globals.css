@@ -129,7 +129,7 @@ html {
 body {
   background-color: var(--wechat-bg);
   color: var(--wechat-text);
-  font-family: 'HarmonyOS Sans', -apple-system, BlinkMacSystemFont, "PingFang SC",
+  font-family: var(--site-font-family, 'HarmonyOS Sans'), -apple-system, BlinkMacSystemFont, "PingFang SC",
     "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;

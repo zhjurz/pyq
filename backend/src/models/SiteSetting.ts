@@ -30,6 +30,7 @@ interface SiteSettingAttributes {
   socialLinks: string;
   postCollapseLength: number;
   fontUrl: string;
+  fontFamily: string;
   adOnArchives: boolean;
   /** 评论防刷（限流 + 黑名单）总开关，默认开启 */
   commentAntiSpamEnabled: boolean;
@@ -61,7 +62,7 @@ interface SiteSettingAttributes {
 
 interface SiteSettingCreationAttributes extends Optional<
   SiteSettingAttributes,
-  "id" | "siteName" | "description" | "keywords" | "domain" | "beian" | "faviconUrl" | "ogImage" | "backgroundImages" | "darkModeEnabled" | "darkModeStartTime" | "darkModeEndTime" | "emailNotifyEnabled" | "notifyEmail" | "smtpHost" | "smtpPort" | "smtpSecure" | "smtpUser" | "smtpPass" | "smtpFrom" | "emailTemplate" | "amapJsKey" | "amapSecurityJsCode" | "amapKey" | "beianUrl" | "socialLinks" | "postCollapseLength" | "fontUrl" | "adOnArchives" | "commentAntiSpamEnabled" | "rssEnabled" | "rssIncludeMoments" | "doubanId" | "doubanCache" | "doubanSyncStatus" | "doubanSyncedAt" | "doubanLastError" | "doubanSyncLeaseId" | "doubanSyncLeaseExpiresAt" | "doubanLastAttemptAt" | "bannedWords" | "musicAutoplay"
+  "id" | "siteName" | "description" | "keywords" | "domain" | "beian" | "faviconUrl" | "ogImage" | "backgroundImages" | "darkModeEnabled" | "darkModeStartTime" | "darkModeEndTime" | "emailNotifyEnabled" | "notifyEmail" | "smtpHost" | "smtpPort" | "smtpSecure" | "smtpUser" | "smtpPass" | "smtpFrom" | "emailTemplate" | "amapJsKey" | "amapSecurityJsCode" | "amapKey" | "beianUrl" | "socialLinks" | "postCollapseLength" | "fontUrl" | "fontFamily" | "adOnArchives" | "commentAntiSpamEnabled" | "rssEnabled" | "rssIncludeMoments" | "doubanId" | "doubanCache" | "doubanSyncStatus" | "doubanSyncedAt" | "doubanLastError" | "doubanSyncLeaseId" | "doubanSyncLeaseExpiresAt" | "doubanLastAttemptAt" | "bannedWords" | "musicAutoplay"
 > {}
 
 class SiteSetting
@@ -96,6 +97,7 @@ class SiteSetting
   declare socialLinks: string;
   declare postCollapseLength: number;
   declare fontUrl: string;
+  declare fontFamily: string;
   declare adOnArchives: boolean;
   declare commentAntiSpamEnabled: boolean;
   declare rssEnabled: boolean;
@@ -251,6 +253,11 @@ SiteSetting.init(
     },
     fontUrl: {
       type: DataTypes.STRING(500),
+      allowNull: false,
+      defaultValue: "",
+    },
+    fontFamily: {
+      type: DataTypes.STRING(200),
       allowNull: false,
       defaultValue: "",
     },

@@ -45,6 +45,7 @@ interface SiteSettings {
   darkModeStartTime: string;
   darkModeEndTime: string;
   fontUrl: string;
+  fontFamily: string;
   adOnArchives: boolean;
   rssEnabled: boolean;
   rssIncludeMoments: boolean;
@@ -66,6 +67,7 @@ const DEFAULTS: SiteSettings = {
   darkModeStartTime: "18:00",
   darkModeEndTime: "06:00",
   fontUrl: "",
+  fontFamily: "",
   adOnArchives: false,
   rssEnabled: true,
   rssIncludeMoments: true,
@@ -335,6 +337,14 @@ export default function AdminSettings() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!token) return;
+
+    const hasFontUrl = Boolean(form.fontUrl.trim());
+    const hasFontFamily = Boolean(form.fontFamily.trim());
+    if (hasFontUrl !== hasFontFamily) {
+      alert("自定义字体 CSS 链接和字体名称需同时填写或同时留空");
+      return;
+    }
+
     setSaving(true);
     setSaved(false);
 
@@ -560,7 +570,28 @@ export default function AdminSettings() {
           <p className="mt-1.5 text-xs text-adm-text-tertiary">
             留空使用内嵌 HarmonyOS Sans 字体（
             <code className="rounded bg-adm-input px-1 py-0.5 text-[11px]">/fonts/embedded-font.css</code>
-            ）。填写后将以自定义 CSS 链接加载字体，需包含 @font-face 声明。
+            ）。自定义 CSS 必须包含 @font-face 声明，并与下方字体名称同时填写。
+          </p>
+        </div>
+
+        <div className="mb-6">
+          <label className="mb-1.5 block text-xs font-medium text-adm-text-secondary">
+            自定义字体名称（font-family）
+          </label>
+          <div className="relative">
+            <Type className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-adm-text-tertiary" />
+            <input
+              type="text"
+              value={form.fontFamily}
+              onChange={(e) => setForm({ ...form, fontFamily: e.target.value })}
+              className="w-full rounded-xl border border-adm-border bg-adm-input py-2.5 pl-10 pr-3 text-sm text-adm-text transition-colors focus:border-adm-text-secondary focus:bg-adm-input-focus focus:outline-none focus:ring-1 focus:ring-adm-text-secondary"
+              placeholder="Noto Serif CJK"
+            />
+          </div>
+          <p className="mt-1.5 text-xs text-adm-text-tertiary">
+            必须与 CSS 中 @font-face 的 font-family 完全一致。例如 ZeoSeven 的
+            <code className="mx-1 rounded bg-adm-input px-1 py-0.5 text-[11px]">https://fontsapi.zeoseven.com/285/main/result.css</code>
+            应填写 <code className="rounded bg-adm-input px-1 py-0.5 text-[11px]">Noto Serif CJK</code>。
           </p>
         </div>
 

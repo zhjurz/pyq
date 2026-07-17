@@ -4,6 +4,20 @@ import { SiteSetting, User } from "../models";
 import { siteSettingTextDefaults } from "../models/SiteSetting";
 import { authenticate, requireAdmin, AuthRequest } from "../middleware/auth";
 import { sendTestEmail, DEFAULT_EMAIL_TEMPLATE } from "../services/email-service";
+import { triggerRevalidate } from "../utils/revalidate";
+
+const fontFamilyPattern = /^[\p{L}\p{N} ._-]+$/u;
+
+function isValidFontUrl(value: string): boolean {
+  if (!value) return true;
+
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}
 
 const router = Router();
 
@@ -33,6 +47,7 @@ router.get("/", async (_req: Request, res: Response) => {
     socialLinks: setting.socialLinks,
     postCollapseLength: setting.postCollapseLength,
     fontUrl: setting.fontUrl,
+    fontFamily: setting.fontFamily,
     darkModeEnabled: setting.darkModeEnabled,
     darkModeStartTime: setting.darkModeStartTime,
     darkModeEndTime: setting.darkModeEndTime,
@@ -62,7 +77,18 @@ router.put(
     body("backgroundImages").optional().isString(),
     body("socialLinks").optional().isString(),
     body("postCollapseLength").optional().isInt({ min: 0, max: 100000 }),
-    body("fontUrl").optional().trim().isLength({ max: 500 }),
+    body("fontUrl")
+      .optional()
+      .trim()
+      .isLength({ max: 500 })
+      .custom(isValidFontUrl)
+      .withMessage("自定义字体 CSS 链接必须是有效的 HTTPS URL"),
+    body("fontFamily")
+      .optional()
+      .trim()
+      .isLength({ max: 200 })
+      .custom((value) => !value || fontFamilyPattern.test(value))
+      .withMessage("字体名称只能包含文字、数字、空格、句点、连字符和下划线"),
     body("darkModeEnabled").optional().isBoolean(),
     body("darkModeStartTime").optional().matches(/^\d{2}:\d{2}$/),
     body("darkModeEndTime").optional().matches(/^\d{2}:\d{2}$/),
@@ -94,6 +120,13 @@ router.put(
     }
 
     const setting = await ensureSetting();
+    const fontUrl = req.body.fontUrl ?? setting.fontUrl;
+    const fontFamily = req.body.fontFamily ?? setting.fontFamily;
+    if (Boolean(fontUrl) !== Boolean(fontFamily)) {
+      res.status(400).json({ message: "自定义字体 CSS 链接和字体名称需同时填写或同时留空" });
+      return;
+    }
+
     const doubanIdChanged = req.body.doubanId !== undefined && req.body.doubanId !== setting.doubanId;
     await setting.update({
       siteName: req.body.siteName ?? setting.siteName,
@@ -107,7 +140,8 @@ router.put(
       backgroundImages: req.body.backgroundImages ?? setting.backgroundImages,
       socialLinks: req.body.socialLinks ?? setting.socialLinks,
       postCollapseLength: req.body.postCollapseLength ?? setting.postCollapseLength,
-      fontUrl: req.body.fontUrl ?? setting.fontUrl,
+      fontUrl,
+      fontFamily,
       darkModeEnabled: req.body.darkModeEnabled ?? setting.darkModeEnabled,
       darkModeStartTime: req.body.darkModeStartTime ?? setting.darkModeStartTime,
       darkModeEndTime: req.body.darkModeEndTime ?? setting.darkModeEndTime,
@@ -135,6 +169,8 @@ router.put(
       amapJsKey: req.body.amapJsKey ?? setting.amapJsKey,
       amapSecurityJsCode: req.body.amapSecurityJsCode ?? setting.amapSecurityJsCode,
     });
+
+    void triggerRevalidate();
 
     res.json({
       siteName: setting.siteName,

@@ -98,22 +98,36 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // 获取站点设置中的自定义字体链接；留空则使用内嵌 HarmonyOS Sans 字体（globals.css 中的 @font-face）
+  // 获取站点设置中的自定义字体；留空则使用内嵌 HarmonyOS Sans 字体（globals.css 中的 @font-face）
   let fontUrl = "";
+  let fontFamily = "";
   let rssEnabled = true;
   try {
     const settingsRes = await fetch(`${API_URL}/settings`, { next: { revalidate: 60 } });
     if (settingsRes.ok) {
       const settings = await settingsRes.json();
-      if (settings.fontUrl) fontUrl = settings.fontUrl;
+      if (settings.fontUrl && settings.fontFamily) {
+        fontUrl = settings.fontUrl;
+        fontFamily = settings.fontFamily;
+      }
       if (typeof settings.rssEnabled === "boolean") rssEnabled = settings.rssEnabled;
     }
   } catch {
     // use default embedded font
   }
 
+  const customFontStyle = fontFamily
+    ? ({ "--site-font-family": `"${fontFamily}"` } as React.CSSProperties)
+    : undefined;
+
   return (
-    <html lang="zh-CN" className="h-full antialiased" data-scroll-behavior="smooth" suppressHydrationWarning>
+    <html
+      lang="zh-CN"
+      className="h-full antialiased"
+      data-scroll-behavior="smooth"
+      style={customFontStyle}
+      suppressHydrationWarning
+    >
       <head>
         <link
           rel="preload"
@@ -126,7 +140,7 @@ export default async function RootLayout({
           <link rel="alternate" type="application/rss+xml" title="RSS 订阅" href="/feed" />
         )}
         {fontUrl && (
-          <link rel="stylesheet" href={fontUrl} />
+          <link rel="stylesheet" href={fontUrl} referrerPolicy="no-referrer" />
         )}
       </head>
       <body className="min-h-full bg-white text-wechat-text dark:bg-wechat-bg">
