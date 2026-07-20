@@ -1,287 +1,554 @@
 # kanle · 朋友圈博客
 
-一个像微信朋友圈一样的个人博客系统。发动态、写文章、评论点赞、音乐播放、邮件通知，所有功能开箱即用。
+一个微信朋友圈风格的个人博客系统，支持动态、文章、评论互动、媒体上传、R2 音乐歌单、豆瓣影单、RSS 与后台管理。
+
+推荐使用 **Vercel（前后端分离）+ TiDB Cloud / 托管 MySQL + Cloudflare R2** 部署，无需维护自己的应用服务器；也保留 VPS + PM2 + Nginx 自托管方案。
+
+> 本文所有域名、数据库地址、账号和密钥均为占位示例。请使用自己的真实配置，且**绝不要提交 `.env`、数据库密码、R2 Access Key、JWT 密钥或其他 Token 到仓库**。
 
 ## 功能特性
 
-### 朋友圈动态
-- 发图文动态，支持单图/多图（最多 9 图，微信式拼图）
-- 发视频动态，弹窗播放器（支持 B 站等外链，全屏/进度条）
-- 发 Live Photo 实况图，长按播放视频，默认有声
-- 发音乐动态，浮窗播放器可拖拽
-- 发链接卡片，自动抓取标题/描述/封面
-- 发豆瓣影单卡片，电影/图书/音乐
-- 地理位置定位（高德地图）
-- 滑动切换图片，双击放大，捏合缩放
-
-### 文章系统
-- 富文本编辑器（标题/列表/代码/引用/图片/表情）
-- 文章目录、封面、标签
-- 归档页时间线，微信式正方形图片拼图
-
-### 豆瓣影单
-- 同步豆瓣电影/图书/音乐
-- 分页加载 + 骨架屏
-- 侧栏展示，支持全部/看过/在看/想看筛选
-
-### 评论互动
-- 微信公众号式评论楼层
-- 回复折叠，表情包，点赞
-- 评论邮件通知（微信聊天式模板）
-- 已登录用户免填信息
-
-### 音乐播放器
-- 管理员上传音频到 Cloudflare R2 后组成网站歌单
-- 浏览器直接播放稳定的 R2 公共 URL，不经过音源插件或服务器流量代理
-- 支持 R2 音频卡片、手动 LRC 歌词、浮窗卡片、切歌和静音
-
-### 后台管理
-- 仪表盘：数据统计概览
-- 动态管理：发布/编辑/删除
-- 评论管理：审核/回复/删除
-- 媒体管理：图片/视频库
-- 友链管理：增删改查，随机排序
-- 影单管理：豆瓣同步
-- 音乐歌单：管理 R2 上传的背景音乐和播放顺序
-- 广告管理：侧栏广告位
-- 黑名单：IP 防刷
-- 站点设置：SMTP/高德地图/豆瓣/RSS
-- 夜间模式适配，移动端侧滑栏
-
-### 其他特性
-- **夜间模式** — 手动切换，记忆偏好，全组件适配
-- **响应式设计** — 桌面/移动端完美适配
-- **Cloudflare R2 存储** — 浏览器直传，适配 Vercel 大文件上传
-- **RSS 订阅** — 自动生成 Feed
-- **SEO 优化** — SSR + OG 标签
+- **朋友圈动态**：图文、多图拼图、视频、Live Photo、音乐、链接卡片、豆瓣卡片与地理位置；
+- **文章系统**：富文本编辑、封面、标签、目录、归档时间线；
+- **评论互动**：楼层评论、回复折叠、表情、点赞、邮件通知；
+- **媒体与音乐**：媒体直传 Cloudflare R2，R2 音频歌单、LRC 歌词、浮窗播放器；
+- **豆瓣影单**：同步电影、图书和音乐收藏，支持筛选与分页；
+- **后台管理**：动态、文章、评论、媒体、友链、广告、音乐、黑名单、SMTP、高德地图、豆瓣、RSS 与站点设置；
+- **体验与 SEO**：响应式布局、夜间模式、RSS Feed、SSR 与 OG 标签。
 
 ## 技术栈
 
-| | 技术 |
-|---|---|
+| 类别 | 技术 |
+| --- | --- |
 | 前端 | Next.js 16 · React 19 · Tailwind CSS v4 · Zustand |
 | 后端 | Express 5 · Sequelize 6 · TypeScript 6 |
-| 数据库 | MySQL 5.7 / 8.0 |
-| 部署 | PM2 + Nginx |
+| 数据库 | MySQL 兼容数据库；推荐 TiDB Cloud 等托管服务 |
+| 媒体存储 | Cloudflare R2（生产环境持久媒体存储） |
+| 推荐部署 | Vercel 前端 + Vercel 后端 + 托管 MySQL/TiDB + R2 |
+| 可选自托管 | PM2 + Nginx + MySQL |
 
----
-
-## 部署到 Vercel（Serverless）
-
-如果想把后端部署到 Vercel（Serverless 模式），而不是下面的 VPS 教程，请看
-[`backend/VERCEL_DEPLOYMENT.md`](backend/VERCEL_DEPLOYMENT.md)。两种部署方式共用同一套代码，业务逻辑完全一致。
-
----
-
-## 部署教程（Debian 12 全新服务器）
-
-本教程适用于一台全新的 Debian 12 服务器，从零开始安装所有依赖并部署 kanle。
-
-### 前置条件
-
-- 一台 Debian 12 服务器（root 或 sudo 权限）
-- 一个域名（可选，没有也可用 IP 访问）
-- 云服务商安全组放行 80 和 443 端口
-
-### 代码仓库
-
-kanle 在 GitHub 和 Gitee 上均有仓库，分为稳定版和开发版：
+## 代码仓库
 
 | 版本 | GitHub | Gitee |
-|---|---|---|
+| --- | --- | --- |
 | 稳定版（推荐） | `https://github.com/zilinnb/kanle.git` | `https://gitee.com/ziln_cn/kanle.git` |
-| 开发版（功能前沿） | — | `https://gitee.com/ziln_cn/kanle-next.git` |
+| 开发版 | — | `https://gitee.com/ziln_cn/kanle-next.git` |
 
-> 国内服务器推荐使用 Gitee，克隆速度更快。
+---
 
-### 第 1 步：系统更新
+# 推荐部署：Vercel + TiDB/托管 MySQL + Cloudflare R2
+
+该方案将前端、后端作为两个独立的 Vercel 项目部署：
+
+```text
+浏览器
+  │
+  ▼
+Vercel 前端（frontend）
+  │  浏览器访问 /api/*；Next.js 在服务端转发请求
+  ▼
+Vercel 后端（backend）
+  ├──► TiDB Cloud / 托管 MySQL（业务数据）
+  └──► Cloudflare R2（图片、视频、音频等媒体）
+```
+
+建议准备三个稳定的 Origin：
+
+| 用途 | 示例 | 说明 |
+| --- | --- | --- |
+| 前端站点 | `https://example.com` | 用户实际访问的网站 |
+| 后端 API | `https://api.example.com` | 后端 Vercel 项目地址；也可先使用 Vercel 的稳定 Production 域名 |
+| R2 媒体域名 | `https://media.example.com` | 绑定到 R2 Bucket 的公开自定义域名 |
+
+不要将每次构建产生的 Vercel Preview URL 当作长期配置。Preview URL 可能变化，会导致 CORS、R2 上传和回调配置失效。
+
+## 1. 前置条件
+
+- GitHub 或 Gitee 仓库；
+- Vercel 账号；
+- TiDB Cloud 或其他可公网连接的 MySQL 兼容数据库；
+- Cloudflare 账号与 R2 Bucket；
+- Node.js 20+ 与 pnpm（用于本地初始化目标数据库）；
+- 可选：已托管到 Cloudflare 的域名，用于 R2 媒体自定义域名。
+
+## 2. 创建数据库并初始化
+
+### 2.1 创建 TiDB / MySQL 数据库
+
+在 TiDB Cloud SQL Editor、云数据库控制台或 MySQL 客户端中创建数据库，例如：
+
+```sql
+CREATE DATABASE moment_blog
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+```
+
+记录数据库服务提供的以下信息：
+
+```text
+Host
+Port
+Username
+Password
+Database name
+是否要求 SSL/TLS
+```
+
+TiDB Cloud 等托管服务通常要求 TLS；请以控制台的 Connect 页面为准。常见配置为：
+
+```env
+DB_SSL=true
+```
+
+> `db:init` 只初始化一个**已经存在**的数据库，不会执行 `CREATE DATABASE`。如果报 `Unknown database`，请先完成本步骤。
+
+### 2.2 在本地初始化目标数据库
+
+下载源码后，在本地进入后端目录：
+
+```bash
+cd backend
+pnpm install
+```
+
+复制环境变量模板：
+
+```bash
+# macOS / Linux
+cp .env.example .env
+
+# Windows PowerShell
+# Copy-Item .env.example .env
+```
+
+编辑 `backend/.env`，让它指向目标数据库。以下仅为示例：
+
+```env
+DB_HOST=<your-database-host>
+DB_PORT=<your-database-port>
+DB_USER=<your-database-user>
+DB_PASSWORD=<your-database-password>
+DB_NAME=moment_blog
+DB_SSL=true
+
+# 仅在首次尚无管理员时用于创建管理员
+ADMIN_EMAIL=admin@example.com
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=<choose-a-strong-password>
+```
+
+执行唯一的官方数据库初始化命令：
+
+```bash
+pnpm db:init
+```
+
+`db:init` 会：
+
+1. 验证数据库连接；
+2. 创建缺失的项目数据表；
+3. 补齐当前支持的兼容字段；
+4. 创建缺失的站点设置记录；
+5. 创建默认音乐歌单；
+6. 首次不存在管理员时创建管理员。
+
+该命令可安全重复运行：不会删除业务数据，不会重置已有管理员密码，也不会在已有数据上使用 `alter` 或 `force`。
+
+> 正式部署请在本地、CI 或受信任的维护环境中显式运行 `pnpm db:init`。应用启动及 Vercel 冷启动默认只连接数据库，**不会自动执行 DDL**。不要将 `DB_SYNC_ON_BOOT=true` 作为常规生产部署方案。
+
+## 3. 配置 Cloudflare R2
+
+Vercel Serverless 的文件系统不持久。生产环境的图片、视频、音频等媒体必须使用 R2 等对象存储保存。
+
+### 3.1 创建 Bucket 与 API Token
+
+1. 在 Cloudflare Dashboard 中进入 **R2 → Create bucket**；
+2. 创建 Bucket，例如 `moment-media`；
+3. 进入 **R2 → Manage R2 API Tokens**；
+4. 创建具备 **Object Read & Write** 权限的 API Token；
+5. 保存以下信息，稍后只填入后端环境变量：
+
+```text
+Cloudflare Account ID
+Access Key ID
+Secret Access Key
+Bucket 名称
+```
+
+### 3.2 绑定公开媒体域名
+
+在 Bucket 设置中绑定一个稳定的公开自定义域名，例如：
+
+```text
+https://media.example.com
+```
+
+该域名必须同时用于：
+
+```text
+后端 R2_PUBLIC_URL
+前端 NEXT_PUBLIC_MEDIA_ORIGIN
+```
+
+两者必须完全相同，且不要带末尾 `/`：
+
+```text
+正确：https://media.example.com
+错误：https://media.example.com/
+```
+
+### 3.3 配置 R2 CORS
+
+浏览器上传媒体时，会通过后端签发的预签名 URL 直接 `PUT` 到 R2。R2 Bucket 需要独立配置 CORS；后端的 `CLIENT_URL` 或 `CORS_ALLOWED_ORIGINS` 不能替代它。
+
+在 **R2 → Bucket → Settings → CORS Policy** 中配置。生产模板如下：
+
+```json
+[
+  {
+    "AllowedOrigins": [
+      "https://example.com",
+      "https://www.example.com"
+    ],
+    "AllowedMethods": ["PUT", "GET", "HEAD"],
+    "AllowedHeaders": ["Content-Type"],
+    "ExposeHeaders": ["ETag", "cf-ray", "x-amz-request-id"],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+本地开发时，可额外加入：
+
+```text
+http://localhost:3000
+```
+
+注意：
+
+- `AllowedOrigins` 应填写**浏览器中打开前端页面的完整 Origin**；
+- 不要将 API 域名或 R2 媒体域名填进去，除非页面确实从该 Origin 提供；
+- 如果使用前端 Vercel Production 域名测试，也要把它加入；
+- 生产环境不要使用 `"AllowedOrigins": ["*"]`。
+
+## 4. 部署后端 Vercel 项目
+
+在 Vercel 中导入仓库并创建第一个项目：
+
+| 设置项 | 值 |
+| --- | --- |
+| Root Directory | `backend` |
+| Framework Preset | `Other` |
+| Build / Output 设置 | 使用项目默认配置即可 |
+
+项目内已有 `backend/vercel.json`，它会配置 Serverless Function 重写和豆瓣同步 Cron。Vercel 会自动注入 `VERCEL=1`，无需手动设置。
+
+在 **Settings → Environment Variables** 中配置 Production 环境变量。
+
+### 后端运行时环境变量
+
+| 变量 | 是否需要 | 示例 / 说明 |
+| --- | --- | --- |
+| `NODE_ENV` | 是 | `production` |
+| `DB_HOST` | 是 | `<your-database-host>` |
+| `DB_PORT` | 是 | 使用数据库控制台提供的端口；不要假定一定是 `3306` |
+| `DB_USER` | 是 | 数据库用户名 |
+| `DB_PASSWORD` | 是 | 数据库密码 |
+| `DB_NAME` | 是 | 例如 `moment_blog` |
+| `DB_SSL` | 托管数据库通常需要 | 通常为 `true` |
+| `DB_SSL_REJECT_UNAUTHORIZED` | 可选 | 只有数据库服务商明确要求时才设为 `false` |
+| `JWT_SECRET` | 是 | 独立的 32+ 位随机字符串 |
+| `JWT_EXPIRES_IN` | 否 | 默认 `7d` |
+| `CLIENT_URL` | 是 | 前端稳定 Origin，如 `https://example.com` |
+| `CORS_ALLOWED_ORIGINS` | 可选 | 多个稳定 Origin 用逗号分隔；设置后优先于 `CLIENT_URL` |
+| `REVALIDATE_SECRET` | 是 | 必须与前端同名变量完全一致 |
+| `FRONTEND_REVALIDATE_URL` | 可选 | 不填时回退到 `CLIENT_URL` |
+| `CRON_SECRET` | 推荐 | 保护豆瓣 Cron 接口的独立随机字符串，仅后端使用 |
+| `R2_ACCOUNT_ID` | 是 | Cloudflare Account ID |
+| `R2_ACCESS_KEY_ID` | 是 | R2 Object Read & Write Access Key ID |
+| `R2_SECRET_ACCESS_KEY` | 是 | 对应 Secret Access Key |
+| `R2_BUCKET` | 是 | Bucket 名称 |
+| `R2_PUBLIC_URL` | 是 | 公开媒体 Origin，如 `https://media.example.com` |
+| `DB_POOL_MAX` | 可选 | Serverless 连接池上限；默认已针对 Vercel 调小 |
+| `DB_POOL_IDLE` | 可选 | 连接池空闲回收时间（毫秒） |
+
+后端配置示例：
+
+```env
+NODE_ENV=production
+
+DB_HOST=<your-database-host>
+DB_PORT=<your-database-port>
+DB_USER=<your-database-user>
+DB_PASSWORD=<your-database-password>
+DB_NAME=moment_blog
+DB_SSL=true
+
+JWT_SECRET=<a-random-secret-at-least-32-characters>
+JWT_EXPIRES_IN=7d
+
+CLIENT_URL=https://example.com
+REVALIDATE_SECRET=<another-random-secret>
+CRON_SECRET=<another-independent-random-secret>
+
+R2_ACCOUNT_ID=<your-cloudflare-account-id>
+R2_ACCESS_KEY_ID=<your-r2-access-key-id>
+R2_SECRET_ACCESS_KEY=<your-r2-secret-access-key>
+R2_BUCKET=moment-media
+R2_PUBLIC_URL=https://media.example.com
+```
+
+`JWT_SECRET`、`REVALIDATE_SECRET` 与 `CRON_SECRET` 应使用彼此不同的随机值。
+
+> `ADMIN_EMAIL`、`ADMIN_USERNAME`、`ADMIN_PASSWORD` 只在本地首次运行 `db:init` 且数据库中尚无管理员时使用。数据库初始化完成后，它们不是 Vercel 后端运行时必填变量。
+
+## 5. 部署前端 Vercel 项目
+
+再次从同一仓库创建第二个 Vercel 项目：
+
+| 设置项 | 值 |
+| --- | --- |
+| Root Directory | `frontend` |
+| Framework Preset | `Next.js` |
+
+在前端项目的 **Settings → Environment Variables** 中配置：
+
+| 变量 | 是否需要 | 示例 / 说明 |
+| --- | --- | --- |
+| `NEXT_PUBLIC_API_URL` | 是 | 固定为 `/api` |
+| `BACKEND_URL` | 是 | 后端 Origin，例如 `https://api.example.com`；不要加 `/api` 或结尾 `/` |
+| `NEXT_PUBLIC_SITE_URL` | 推荐 | 前端公开站点 Origin，例如 `https://example.com` |
+| `NEXT_PUBLIC_MEDIA_ORIGIN` | 是 | 必须等于后端 `R2_PUBLIC_URL` |
+| `REVALIDATE_SECRET` | 是 | 必须等于后端 `REVALIDATE_SECRET` |
+
+示例：
+
+```env
+NEXT_PUBLIC_API_URL=/api
+BACKEND_URL=https://api.example.com
+NEXT_PUBLIC_SITE_URL=https://example.com
+NEXT_PUBLIC_MEDIA_ORIGIN=https://media.example.com
+REVALIDATE_SECRET=<the-same-value-as-backend>
+```
+
+以下关系必须成立：
+
+```text
+frontend.REVALIDATE_SECRET = backend.REVALIDATE_SECRET
+frontend.NEXT_PUBLIC_MEDIA_ORIGIN = backend.R2_PUBLIC_URL
+```
+
+不要使用以下变量保存密钥：
+
+```env
+NEXT_PUBLIC_REVALIDATE_SECRET
+NEXT_PUBLIC_CRON_SECRET
+```
+
+任何 `NEXT_PUBLIC_` 前缀变量都会在前端构建时暴露给浏览器。
+
+### 为什么 `NEXT_PUBLIC_API_URL` 必须保持 `/api`
+
+浏览器请求：
+
+```text
+https://example.com/api/posts
+```
+
+Next.js 通过 `BACKEND_URL` 在服务端转发到：
+
+```text
+https://api.example.com/api/posts
+```
+
+因此不要将 `NEXT_PUBLIC_API_URL` 写成完整后端地址。保持 `/api` 可减少浏览器跨域 Cookie 问题；域名变化时也不需要重写客户端 API 路径。
+
+## 6. 绑定域名、Preview 与重新部署
+
+建议将稳定 Production 域名绑定到 Vercel：
+
+```text
+前端：https://example.com
+后端：https://api.example.com
+R2：https://media.example.com
+```
+
+绑定完成后，重新检查：
+
+```env
+# frontend
+BACKEND_URL=https://api.example.com
+NEXT_PUBLIC_SITE_URL=https://example.com
+NEXT_PUBLIC_MEDIA_ORIGIN=https://media.example.com
+
+# backend
+CLIENT_URL=https://example.com
+R2_PUBLIC_URL=https://media.example.com
+```
+
+修改环境变量后，请分别对前端和后端项目执行一次 **Redeploy**。
+
+特别注意：`NEXT_PUBLIC_MEDIA_ORIGIN` 会在前端构建期用于 Next Image 远程域名白名单。更换 R2 媒体域名后，必须重新构建前端。
+
+如果测试 Vercel Preview 部署：
+
+1. 使用稳定的 Preview 域名，或记录实际 Preview 的完整 Origin；
+2. 将该 Origin 加入后端 `CORS_ALLOWED_ORIGINS`；
+3. 同时将其加入 R2 Bucket 的 `AllowedOrigins`；
+4. 不要长期依赖随分支变化的 Preview 地址作为生产配置。
+
+## 7. 部署完成后的检查
+
+1. 访问后端健康检查：
+
+   ```text
+   https://api.example.com/api/health
+   ```
+
+   预期返回：
+
+   ```json
+   { "status": "ok", "timestamp": "..." }
+   ```
+
+2. 打开前端站点，确认 Network 面板中请求路径为：
+
+   ```text
+   /api/posts
+   /api/settings
+   /api/friends
+   ```
+
+3. 使用 `db:init` 创建的管理员账号登录：
+
+   ```text
+   https://example.com/admin/login
+   ```
+
+4. 上传一张测试图片或音频：确认对象上传到 R2，且可通过 `R2_PUBLIC_URL` 对应的媒体域名访问；
+5. 发布一条测试动态，确认列表刷新和页面重验证正常；
+6. 如启用了豆瓣影单，确认后端已配置 `CRON_SECRET`，并检查 Vercel 套餐是否支持 Cron Jobs。
+
+---
+
+# 可选：VPS + PM2 + Nginx 自托管
+
+如果希望自行维护服务器、MySQL、Nginx、SSL 与进程守护，可以使用以下方案。新部署优先推荐前面的 Vercel 方案；VPS 模式适合需要固定出口 IP、局域网数据库或完整服务器控制权的场景。
+
+## 前置条件
+
+- Debian 12 服务器（root 或 sudo 权限）；
+- 一个域名（推荐）；
+- 云服务商安全组已放行 `80`、`443` 与 `22` 端口；
+- 已准备 Cloudflare R2，作为持久媒体存储。
+
+## 1. 安装系统依赖、Node.js 与 PM2
 
 ```bash
 apt update && apt upgrade -y
-apt install -y curl wget git vim build-essential
-```
+apt install -y curl wget git vim build-essential nginx mysql-server
 
-### 第 2 步：安装 Node.js 20 LTS
-
-```bash
-# 添加 NodeSource 仓库
+# 安装 Node.js 20 LTS
 curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-
-# 安装 Node.js
 apt install -y nodejs
 
-# 验证
-node -v   # 应输出 v20.x.x
-npm -v    # 应输出 10.x.x
-```
-
-### 第 3 步：启用 pnpm + 安装 PM2
-
-```bash
-# 启用 pnpm（Node 16+ 自带 corepack，一次性操作）
+# 启用 pnpm 并安装 PM2
 corepack enable
 corepack prepare pnpm@latest --activate
-
-# 全局安装 PM2
 npm install -g pm2
-
-# 验证
-pnpm -v   # 应输出 10.x.x
-pm2 -v    # 应输出 7.x.x
 ```
 
-### 第 4 步：安装 MySQL
+验证：
 
 ```bash
-apt install -y mysql-server
-
-# 启动并设置开机自启
-systemctl start mysql
-systemctl enable mysql
-
-# 安全初始化（按提示设置 root 密码，其余选项一路 Y）
-mysql_secure_installation
+node -v
+pnpm -v
+pm2 -v
 ```
 
-### 第 5 步：创建数据库
+## 2. 创建本地 MySQL 数据库
 
 ```bash
+systemctl enable --now mysql
 mysql -u root -p
 ```
 
+在 MySQL 中执行：
+
 ```sql
 CREATE DATABASE moment_blog CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'kanle'@'localhost' IDENTIFIED BY '你的强密码';
+CREATE USER 'kanle'@'localhost' IDENTIFIED BY '<choose-a-strong-password>';
 GRANT ALL PRIVILEGES ON moment_blog.* TO 'kanle'@'localhost';
 FLUSH PRIVILEGES;
 EXIT;
 ```
 
-> 记住密码，后面配置 `.env` 时要用。
-
-### 第 6 步：安装 Nginx
+## 3. 克隆并部署后端
 
 ```bash
-apt install -y nginx
-systemctl enable nginx
-```
-
-### 第 7 步：克隆代码
-
-```bash
-# 安装路径（可自定义，后续 Nginx 配置需对应修改）
 INSTALL_DIR=/opt/kanle
 
-# 方式 A：从 Gitee 克隆（国内推荐）
-git clone https://gitee.com/ziln_cn/kanle.git $INSTALL_DIR
+# 国内服务器可使用 Gitee
+# git clone https://gitee.com/ziln_cn/kanle.git $INSTALL_DIR
 
-# 方式 B：从 Gitee 克隆开发版
-# git clone https://gitee.com/ziln_cn/kanle-next.git $INSTALL_DIR
-
-# 方式 C：从 GitHub 克隆
-# git clone https://github.com/zilinnb/kanle.git $INSTALL_DIR
-```
-
-### 第 8 步：部署后端
-
-```bash
+git clone https://github.com/zilinnb/kanle.git $INSTALL_DIR
 cd $INSTALL_DIR/backend
-
-# 安装依赖
 pnpm install
-
-# 配置环境变量
 cp .env.example .env
-vim .env
 ```
 
-编辑 `.env`，修改以下关键字段：
+编辑 `.env`。至少设置数据库、JWT、前端 Origin、重验证密钥及完整 R2 配置：
 
-```ini
-# MySQL（填入第 5 步设置的密码）
+```env
 DB_HOST=127.0.0.1
 DB_PORT=3306
 DB_USER=kanle
-DB_PASSWORD=你的强密码
+DB_PASSWORD=<your-database-password>
 DB_NAME=moment_blog
 
-# JWT 密钥（改为随机长字符串，可用 openssl rand -hex 32 生成）
-JWT_SECRET=请改成一串随机长字符串
+JWT_SECRET=<a-random-secret-at-least-32-characters>
+CLIENT_URL=https://example.com
+REVALIDATE_SECRET=<another-random-secret>
 
-# 初始管理员（仅首次创建生效，之后修改不会更新已有账号）
-ADMIN_EMAIL=admin@kanle.net
-ADMIN_PASSWORD=123456
-ADMIN_USERNAME=admin
-
-# 前端地址（有域名填 https://你的域名.com，没域名填 http://服务器IP）
-CLIENT_URL=http://localhost:3000
-
-# 按需重验证密钥（须与前端一致，生产使用随机长字符串）
-REVALIDATE_SECRET=请改为随机长字符串
-
-# Cloudflare R2（唯一持久媒体存储；必须使用绑定的公开媒体域名）
-R2_ACCOUNT_ID=<Cloudflare Account ID>
-R2_ACCESS_KEY_ID=<Object Read & Write Access Key>
-R2_SECRET_ACCESS_KEY=<Object Read & Write Secret Key>
-R2_BUCKET=<Bucket 名称>
-R2_PUBLIC_URL=https://media.你的域名.com
+R2_ACCOUNT_ID=<your-cloudflare-account-id>
+R2_ACCESS_KEY_ID=<your-r2-access-key-id>
+R2_SECRET_ACCESS_KEY=<your-r2-secret-access-key>
+R2_BUCKET=moment-media
+R2_PUBLIC_URL=https://media.example.com
 ```
 
-构建并初始化数据库：
+构建、初始化并启动：
 
 ```bash
-# 编译 TypeScript
 pnpm build
-
-# 初始化数据库表 + 创建管理员账号
-pnpm db:seed
-```
-
-用 PM2 启动：
-
-```bash
+pnpm db:init
 pm2 start ecosystem.config.js
 pm2 save
 ```
 
-验证后端是否正常：
+检查：
 
 ```bash
-curl http://localhost:4000/api/health
-# 返回 JSON 即正常
+curl http://127.0.0.1:4000/api/health
 ```
 
-### 第 9 步：部署前端
+## 4. 部署前端
 
 ```bash
 cd $INSTALL_DIR/frontend
-
-# 安装依赖
 pnpm install
-
-# 配置环境变量
 cp .env.example .env.local
 ```
 
-`.env.local` 默认内容通常无需修改，如有域名可设置 `NEXT_PUBLIC_SITE_URL`：
+配置 `frontend/.env.local`：
 
-```ini
-# 后端 API 地址（相对路径 /api，通过 Next.js rewrites 代理，任何域名/IP 通用）
+```env
 NEXT_PUBLIC_API_URL=/api
+BACKEND_URL=http://127.0.0.1:4000
+NEXT_PUBLIC_SITE_URL=https://example.com
+NEXT_PUBLIC_MEDIA_ORIGIN=https://media.example.com
+REVALIDATE_SECRET=<the-same-value-as-backend>
 
-# 后端地址（rewrites 代理目标）
-BACKEND_URL=http://localhost:4000
-
-# 站点 URL（可选，用于 Cravatar 默认头像，有域名可设为 https://你的域名.com）
-NEXT_PUBLIC_SITE_URL=
-
-# 稳定 R2 媒体域名（用于 Next Image 白名单）
-NEXT_PUBLIC_MEDIA_ORIGIN=https://media.你的域名.com
-
-# 按需重验证密钥（仅服务端使用，须与后端 REVALIDATE_SECRET 一致）
-REVALIDATE_SECRET=请改为随机长字符串
-
-# standalone 服务监听
 PORT=3000
 HOSTNAME=0.0.0.0
 ```
@@ -289,111 +556,146 @@ HOSTNAME=0.0.0.0
 构建并启动：
 
 ```bash
-# 构建（standalone 模式，生成独立可运行产物）
 pnpm build
-
-# 复制静态资源到 standalone 目录（必须执行，否则页面样式丢失）
 cp -r .next/static .next/standalone/.next/static
-
-# 用 PM2 启动
 pm2 start ecosystem.config.js
 pm2 save
 ```
 
-验证前端是否正常：
+检查：
 
 ```bash
-curl http://localhost:3000
-# 返回 HTML 即正常
+curl http://127.0.0.1:3000
 ```
 
-### 第 10 步：配置 Nginx 反向代理
+## 5. 配置 Nginx 与 HTTPS
+
+复制并编辑项目提供的配置：
 
 ```bash
-# 复制项目提供的 Nginx 配置
 cp $INSTALL_DIR/deploy/nginx.conf /etc/nginx/conf.d/kanle.conf
-
-# 编辑配置，替换域名和安装路径
 vim /etc/nginx/conf.d/kanle.conf
 ```
 
-需要修改的内容：
-- `server_name yourdomain.com` → 改为你的域名或 IP
-- `/opt/kanle` → 改为你的实际安装路径（如果用的不是 `/opt/kanle`）
+将其中的：
 
-测试并重载 Nginx：
+```text
+server_name yourdomain.com
+/opt/kanle
+```
+
+分别替换为实际域名与安装目录。然后验证并重载：
 
 ```bash
 nginx -t
 nginx -s reload
 ```
 
-> **端口说明**：外部只需放行 80（HTTP）和 443（HTTPS）。前端 3000 和后端 4000 端口由 Nginx 反向代理，不需要对外暴露。
-
-### 第 11 步：配置 SSL 证书（有域名时推荐）
+安装证书工具并申请 HTTPS 证书：
 
 ```bash
-# 安装 certbot
 apt install -y certbot python3-certbot-nginx
-
-# 申请证书并自动配置 Nginx
-certbot --nginx -d 你的域名.com
-
-# 测试自动续期
+certbot --nginx -d example.com
 certbot renew --dry-run
 ```
 
-### 第 12 步：配置防火墙
+设置防火墙与 PM2 开机启动：
 
 ```bash
-# 放行 HTTP 和 HTTPS
+ufw allow 22/tcp
 ufw allow 80/tcp
 ufw allow 443/tcp
-ufw allow 22/tcp     # SSH
 ufw enable
-```
 
-> 云服务器还需在服务商控制台的安全组中放行 80 和 443。
-
-### 第 13 步：设置 PM2 开机自启
-
-```bash
 pm2 startup
-# 按提示执行输出的命令（通常是 systemctl enable pm2-root 之类）
-
+# 按提示执行输出的命令
 pm2 save
 ```
 
 ---
 
-### 访问
+# 环境变量参考
 
-部署完成后，用 `http://你的域名.com` 或 `http://服务器IP` 打开：
+## 后端运行时变量
 
-- 前端首页：`http://你的域名`
-- 后台管理：`http://你的域名/admin/login`
-- 默认账号：`admin`（用户名登录，也支持邮箱 `admin@kanle.net`）
-- 默认密码：`123456`
+| 变量 | 必填 | 默认 / 说明 |
+| --- | --- | --- |
+| `NODE_ENV` | 生产建议设置 | `production` |
+| `DB_HOST` | 是 | 数据库地址；本地常为 `127.0.0.1` |
+| `DB_PORT` | 否 | 默认 `3306`；托管数据库按控制台给出的端口填写 |
+| `DB_USER` | 是 | 数据库用户名 |
+| `DB_PASSWORD` | 是 | 数据库密码 |
+| `DB_NAME` | 否 | 默认 `moment_blog` |
+| `DB_SSL` | 托管数据库通常需要 | 通常设为 `true` |
+| `DB_SSL_REJECT_UNAUTHORIZED` | 可选 | 仅按数据库服务商要求设置 |
+| `DB_POOL_MAX` | 可选 | 连接池最大连接数；Serverless 有较小默认值 |
+| `DB_POOL_IDLE` | 可选 | 连接池空闲回收时间（毫秒） |
+| `JWT_SECRET` | 是 | 至少 32 位的随机密钥 |
+| `JWT_EXPIRES_IN` | 否 | 默认 `7d` |
+| `CLIENT_URL` | 是 | 前端 Origin；多个前端可用逗号分隔 |
+| `CORS_ALLOWED_ORIGINS` | 可选 | 显式 CORS 白名单，优先于 `CLIENT_URL` |
+| `REVALIDATE_SECRET` | 是 | 与前端保持一致 |
+| `FRONTEND_REVALIDATE_URL` | 可选 | 不填时使用 `CLIENT_URL` |
+| `CRON_SECRET` | 使用 Vercel Cron 时需要 | 豆瓣 Cron Bearer 密钥，仅后端使用 |
+| `R2_ACCOUNT_ID` | 生产媒体需要 | Cloudflare Account ID |
+| `R2_ACCESS_KEY_ID` | 生产媒体需要 | R2 Object Read & Write Key ID |
+| `R2_SECRET_ACCESS_KEY` | 生产媒体需要 | 对应 Secret Key |
+| `R2_BUCKET` | 生产媒体需要 | R2 Bucket 名称 |
+| `R2_PUBLIC_URL` | 生产媒体需要 | 稳定的公开 R2 媒体 Origin |
 
-> 生产环境务必修改 `ADMIN_PASSWORD`、`JWT_SECRET`、`DB_PASSWORD`。
+## 仅首次初始化管理员时使用
+
+| 变量 | 说明 |
+| --- | --- |
+| `ADMIN_EMAIL` | 当数据库没有管理员时，创建首个管理员的邮箱 |
+| `ADMIN_USERNAME` | 首个管理员用户名，默认 `admin` |
+| `ADMIN_PASSWORD` | 首个管理员密码；生产环境必须设置强密码 |
+
+这些值由 `pnpm db:init` 使用。已有管理员后，再修改这些值不会重置已有账号密码。
+
+## 前端变量
+
+| 变量 | 必填 | 说明 |
+| --- | --- | --- |
+| `NEXT_PUBLIC_API_URL` | 是 | 保持 `/api`，由 Next.js rewrite 同源代理 |
+| `BACKEND_URL` | 是 | 后端 Origin，不带 `/api`、不带尾随 `/` |
+| `NEXT_PUBLIC_SITE_URL` | 推荐 | 前端公开 Origin |
+| `NEXT_PUBLIC_MEDIA_ORIGIN` | 是 | 必须等于后端 `R2_PUBLIC_URL`；更改后需重新构建前端 |
+| `REVALIDATE_SECRET` | 是 | 与后端同名变量完全一致；没有 `NEXT_PUBLIC_` 前缀 |
 
 ---
 
-## 升级（保留数据）
+# 升级与维护
+
+## Vercel / Serverless 升级
+
+1. 在部署前备份数据库；
+2. 更新仓库代码；
+3. 如版本说明提及模型或兼容字段更新，在受信任维护环境中让 `.env` 指向目标数据库后运行：
+
+   ```bash
+   cd backend
+   pnpm install
+   pnpm db:init
+   ```
+
+4. 在 Vercel 重新部署前端与后端项目；
+5. 检查健康接口、登录和媒体上传。
+
+`db:init` 不执行历史业务数据迁移、R2 音乐迁移或点赞重置。此类脚本必须按对应版本说明操作，并在执行前备份数据库；不要将它们作为首次安装步骤。
+
+## VPS 升级
 
 ```bash
 cd $INSTALL_DIR
-
-# 拉取最新代码
 git pull
 
-# 升级后端
 cd backend
 pnpm install
 pnpm build
+pnpm db:init
 pm2 restart kanle-backend
 
-# 升级前端
 cd ../frontend
 pnpm install
 pnpm build
@@ -401,139 +703,116 @@ cp -r .next/static .next/standalone/.next/static
 pm2 restart kanle-frontend
 ```
 
-> 数据库表通过 `sequelize.sync()` 自动同步结构变更，无需手动迁移。后端重启时会自动执行。
+---
 
-## 环境变量
+# 后台配置
 
-### 后端（`backend/.env`）
-
-| 变量 | 必填 | 默认值 | 说明 |
-|---|---|---|---|
-| `DB_HOST` | 是 | `127.0.0.1` | MySQL 地址 |
-| `DB_PORT` | 否 | `3306` | MySQL 端口 |
-| `DB_USER` | 是 | - | MySQL 用户名 |
-| `DB_PASSWORD` | 是 | - | MySQL 密码 |
-| `DB_NAME` | 否 | `moment_blog` | 数据库名 |
-| `JWT_SECRET` | 是 | - | JWT 密钥（生产务必改为随机长字符串） |
-| `JWT_EXPIRES_IN` | 否 | `7d` | Token 过期时间 |
-| `ADMIN_EMAIL` | 是 | `admin@kanle.net` | 初始管理员邮箱（仅首次创建生效） |
-| `ADMIN_PASSWORD` | 是 | `123456` | 初始管理员密码（仅首次创建生效） |
-| `ADMIN_USERNAME` | 否 | `admin` | 管理员用户名 |
-| `CLIENT_URL` | 否 | `http://localhost:3000` | 前端地址（CORS + revalidate 回调） |
-| `REVALIDATE_SECRET` | 否 | `kanle-revalidate` | 按需重验证密钥（须与前端一致） |
-| `R2_ACCOUNT_ID` | 是 | - | Cloudflare Account ID |
-| `R2_ACCESS_KEY_ID` | 是 | - | 具备目标 Bucket Object Read & Write 权限的 Access Key |
-| `R2_SECRET_ACCESS_KEY` | 是 | - | 对应的 Secret Key |
-| `R2_BUCKET` | 是 | - | R2 Bucket 名称 |
-| `R2_PUBLIC_URL` | 是 | - | 已绑定的公开 R2 自定义域名，例如 `https://media.example.com` |
-
-### 前端（`frontend/.env.local`）
-
-| 变量 | 必填 | 说明 |
-|---|---|---|
-| `NEXT_PUBLIC_API_URL` | 是 | 后端 API 地址，默认 `/api`（相对路径，通过 rewrites 代理，通用） |
-| `BACKEND_URL` | 是 | rewrites 代理目标，PM2 部署填 `http://localhost:4000` |
-| `NEXT_PUBLIC_SITE_URL` | 否 | 站点 URL（用于 Cravatar 默认头像，不设则回退 wavatar） |
-| `NEXT_PUBLIC_TWIKOO_ENV_ID` | 否 | Twikoo 评论系统环境 ID |
-| `REVALIDATE_SECRET` | 否 | 须与后端一致 |
-| `NEXT_PUBLIC_MEDIA_ORIGIN` | 是 | 稳定的公开 R2 媒体域名；构建时用于 Next Image 白名单 |
-
-> `NEXT_PUBLIC_API_URL=/api` 是相对路径，换域名后**不需要重新构建**。
-
-## 后台配置
-
-登录后台管理面板（`/admin`）后设置以下功能：
+登录 `/admin` 后可以配置：
 
 | 功能 | 位置 | 说明 |
-|---|---|---|
-| SMTP 邮件 | 站点设置 → 邮件配置 | SMTP 服务器、端口、发件箱、可发送测试邮件 |
-| Cloudflare R2 存储 | 云端存储 | R2 凭据由后端 Vercel 环境变量管理，浏览器直传 R2 |
-| 高德地图 | 站点设置 → 高德地图配置 | JS API Key + Web 服务 Key，[高德开放平台](https://lbs.amap.com/)申请 |
-| R2 音乐歌单 | R2 音乐歌单 | 上传或选择 R2 音频，调整网站背景歌单顺序；不支持第三方音源插件 |
-| 豆瓣影单 | 站点设置 → 豆瓣配置 | 豆瓣 ID，自动同步电影/图书/音乐 |
-| 自动播放 | R2 音乐歌单 | 开启后访客进入网站自动播放 R2 歌单音乐 |
-| 站点信息 | 站点设置 | 站点名称、Favicon、背景图、备案号、夜间模式、RSS |
+| --- | --- | --- |
+| SMTP 邮件 | 站点设置 → 邮件配置 | SMTP 服务器、端口、发件箱与测试邮件 |
+| Cloudflare R2 | 云端存储 | R2 凭证由后端运行环境变量提供，浏览器使用预签名地址直传 |
+| 高德地图 | 站点设置 → 高德地图配置 | Web 端 JS API Key、Web 服务 Key 与安全密钥 |
+| R2 音乐歌单 | R2 音乐歌单 | 选择已上传到 R2 的音频，调整播放顺序 |
+| 豆瓣影单 | 站点设置 → 豆瓣配置 | 豆瓣 ID 与同步设置 |
+| 站点信息 | 站点设置 | 名称、Favicon、背景图、备案、夜间模式、RSS 等 |
 
-## 常见问题
+---
+
+# 常见问题
 
 <details>
-<summary>换了域名需要重新构建前端吗？</summary>
+<summary>换域名后需要重新构建前端吗？</summary>
 
-**不需要。** `NEXT_PUBLIC_API_URL=/api` 是相对路径，通过 Next.js rewrites 代理到后端，任何域名/IP 都通用。只需修改 Nginx 配置中的 `server_name`。
+如果 `NEXT_PUBLIC_API_URL` 始终是 `/api`，普通前端域名变更通常不需要修改客户端 API 路径；但如果变更了 `BACKEND_URL`、`NEXT_PUBLIC_SITE_URL` 或 `NEXT_PUBLIC_MEDIA_ORIGIN`，应更新环境变量并重新部署前端。尤其是媒体域名变化会影响 Next Image 白名单，必须重建前端。
 </details>
 
 <details>
-<summary>发动态后刷新页面没看到更新？</summary>
+<summary>发布动态后刷新页面没有更新？</summary>
 
-检查后端 `.env` 的 `REVALIDATE_SECRET` 与前端 `.env.local` 的 `REVALIDATE_SECRET` 是否一致。该值不会暴露给浏览器。
+检查后端 `REVALIDATE_SECRET` 与前端 `REVALIDATE_SECRET` 是否完全一致。该值是服务端密钥，不应带 `NEXT_PUBLIC_` 前缀。
+</details>
+
+<details>
+<summary>上传到 R2 失败、CORS 报错或图片无法显示？</summary>
+
+1. 确认后端已配置完整 R2 环境变量；
+2. 确认 `NEXT_PUBLIC_MEDIA_ORIGIN` 与 `R2_PUBLIC_URL` 完全一致；
+3. 确认 R2 Bucket CORS 包含当前前端完整 Origin，且允许 `PUT`、`GET`、`HEAD` 与 `Content-Type`；
+4. PUT 阶段 `403` 通常是 R2 凭证、签名或 Content-Type 不匹配；
+5. confirm 阶段失败通常与对象 MIME、大小或复制权限有关；
+6. Vercel 环境下，媒体会经由 `presign → 浏览器直接 PUT R2 → confirm` 流程，不应改回经 Vercel 函数上传大文件。
+</details>
+
+<details>
+<summary>TiDB / 托管 MySQL 连接失败？</summary>
+
+确认 `DB_HOST`、`DB_PORT`、`DB_USER`、`DB_PASSWORD`、`DB_NAME` 与服务商 Connect 页面一致。TiDB Cloud 等托管服务通常要求 `DB_SSL=true`。只有服务商明确要求时才设置 `DB_SSL_REJECT_UNAUTHORIZED=false`。
+</details>
+
+<details>
+<summary>为什么不能在 Vercel 冷启动时自动初始化数据库？</summary>
+
+多个 Serverless 实例可能同时冷启动；若每个实例都执行 DDL，容易产生连接和建表竞争。请在部署前或维护时显式运行 `pnpm db:init`，不要将 `DB_SYNC_ON_BOOT=true` 作为常规生产配置。
+</details>
+
+<details>
+<summary>高德地图搜索或逆地理编码偶发 502？</summary>
+
+后端高德 Web 服务请求来自 Vercel Serverless 的动态出口 IP。如果高德 Web 服务 Key 绑定了固定 IP，可能出现时好时坏。请确认后端使用的是“Web 服务”类型 Key，并根据实际安全需求取消 IP 绑定或使用固定出口 IP 的代理；不要把 Web 端 JS API Key 填入后端 Web 服务 Key 字段。
 </details>
 
 <details>
 <summary>忘记管理员密码？</summary>
 
+在后端运行环境中设置新的 `ADMIN_PASSWORD` 后执行：
+
 ```bash
-cd $INSTALL_DIR/backend
+cd backend
 node dist/scripts/reset-password.js
 ```
-密码会重置为 `.env` 中的 `ADMIN_PASSWORD`。
+
+该运维命令会将对应管理员密码重置为当前 `ADMIN_PASSWORD`。
 </details>
 
 <details>
-<summary>MySQL 连不上？</summary>
-
-- 确认 MySQL 已启动：`systemctl status mysql`
-- 确认用户有权限：`mysql -u kanle -p -e "SHOW DATABASES;"`
-- 确认 `.env` 中 `DB_HOST` 为 `127.0.0.1`（不要用 `localhost`，某些系统下可能有差异）
-</details>
-
-<details>
-<summary>上传的图片显示不出来？</summary>
-
-- 确认后端已配置完整 R2 环境变量；前端构建时设置了相同公开媒体域名的 `NEXT_PUBLIC_MEDIA_ORIGIN`
-- 在 Cloudflare Dashboard → R2 → Bucket → Settings → CORS Policy 中，为**当前前端完整域名**配置 `PUT`、`GET`、`HEAD` 和 `Content-Type`。后端 `CLIENT_URL` 不是 R2 Bucket CORS。
-- R2 直传流程为 `media/presign → 浏览器 PUT → media/confirm`：浏览器开发者工具中先看失败阶段。PUT 网络错误通常是 Bucket CORS；PUT 403 通常是 R2 凭据/签名/Content-Type；confirm 失败通常是对象 MIME、大小或复制权限不匹配。
-- 完整 JSON CORS 示例和 Vercel 变量说明见 [`backend/VERCEL_DEPLOYMENT.md`](backend/VERCEL_DEPLOYMENT.md)。
-- 确认该媒体域名已在 `frontend/next.config.ts` 的远程图片白名单中生效
-</details>
-
-<details>
-<summary>前端构建时内存不足？</summary>
+<summary>如何查看 VPS 日志？</summary>
 
 ```bash
-export NODE_OPTIONS="--max-old-space-size=2048"
-pnpm build
+pm2 logs kanle-backend
+pm2 logs kanle-frontend
+pm2 logs
 ```
 </details>
 
-<details>
-<summary>如何查看日志？</summary>
+---
+
+# 本地开发
 
 ```bash
-pm2 logs kanle-backend      # 后端日志
-pm2 logs kanle-frontend     # 前端日志
-pm2 logs                    # 所有日志
+# 后端
+cd backend
+pnpm install
+cp .env.example .env
+# 编辑 .env 并指向一个已创建的本地/测试数据库
+pnpm db:init
+pnpm dev
 ```
-</details>
 
-<details>
-<summary>如何修改前端端口？</summary>
-
-编辑 `frontend/ecosystem.config.js`，修改 `env.PORT` 的值，然后同步修改 Nginx 配置中 `location /` 的 `proxy_pass` 端口，最后 `pm2 restart kanle-frontend && nginx -s reload`。
-</details>
-
-## 开发
+另开一个终端：
 
 ```bash
-# 后端（热重载）
-cd backend && pnpm dev
-
-# 前端（热重载）
-cd frontend && pnpm dev
+# 前端
+cd frontend
+pnpm install
+cp .env.example .env.local
+pnpm dev
 ```
 
-项目使用 `sequelize.sync()` 自动创建表，无需手动迁移。
+首次开发和生产部署都应显式运行 `pnpm db:init`；应用启动默认不会自动变更数据库表结构。
 
-## License
+# License
 
 [MIT](LICENSE)
 
