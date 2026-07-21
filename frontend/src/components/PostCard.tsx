@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState, useRef, type CSSProperties } from "react";
 import { Music, Pause, Pin, FileText } from "lucide-react";
 import { Post, formatRelativeTime, getPostSourceLabel } from "@/lib/mock-data";
@@ -50,6 +51,7 @@ function stripRichEmbeds(html: string): string {
 }
 
 export default function PostCard({ post, index, onDelete }: PostCardProps) {
+  const router = useRouter();
   const isArticle = post.type === "article";
   const articleDetailUrl = `/articles/${post.shortId || post.id}`;
   // excerpt 优先作为朋友圈配文；卡片内摘要始终取正文纯文本，避免与配文重复

@@ -4,7 +4,7 @@ import Post from "./Post";
 import Comment from "./Comment";
 import Like from "./Like";
 import CommentLike from "./CommentLike";
-import SiteSetting from "./SiteSetting";
+import SiteSetting, { siteSettingTextDefaults } from "./SiteSetting";
 import FriendLink from "./FriendLink";
 import Blacklist from "./Blacklist";
 import Media from "./Media";
@@ -54,5 +54,6 @@ export {
   MusicPlaylist,
   MusicTrack,
   UploadIntent,
+  siteSettingTextDefaults,
 };
 export { getMediaCategory } from "./Media";
