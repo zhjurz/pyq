@@ -1,3 +1,5 @@
+**thanks for [Linux Do](https://linux.do)**
+
 # kanle · 朋友圈博客
 
 一个微信朋友圈风格的个人博客系统，支持动态、文章、评论互动、媒体上传、R2 音乐歌单、豆瓣影单、RSS 与后台管理。
