@@ -20,6 +20,8 @@ export default function ArticleEditorPage({ articleId }: ArticleEditorPageProps)
 
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  /** 朋友圈配文：展示在文章卡片上方的动态文字 */
+  const [caption, setCaption] = useState("");
   const [cover, setCover] = useState("");
   const [articleType, setArticleType] = useState<"original" | "repost" | "ai">("original");
   const [repostUrl, setRepostUrl] = useState("");
@@ -34,7 +36,7 @@ export default function ArticleEditorPage({ articleId }: ArticleEditorPageProps)
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
   const coverInputRef = useRef<HTMLInputElement | null>(null);
   // 编辑模式：加载完成后记录初始快照，用于判断是否有未保存改动
-  const initialSnapshotRef = useRef<{ title: string; content: string } | null>(null);
+  const initialSnapshotRef = useRef<{ title: string; content: string; caption: string } | null>(null);
 
   useEffect(() => {
     if (!articleId) return;
@@ -44,6 +46,7 @@ export default function ArticleEditorPage({ articleId }: ArticleEditorPageProps)
         if (!res.ok) throw new Error("加载失败");
         const data = await res.json();
         setTitle(data.title || "");
+        setCaption(data.excerpt || "");
         let mergedContent = data.content || "";
 
         // 旧数据兼容：将独立的 music/linkCard/video 字段注入到 content 中作为内联嵌入块
@@ -66,7 +69,11 @@ export default function ArticleEditorPage({ articleId }: ArticleEditorPageProps)
         setLikesDisabled(!!data.likesDisabled);
         setCommentsDisabled(!!data.commentsDisabled);
         setPinned(!!data.pinned);
-        initialSnapshotRef.current = { title: data.title || "", content: mergedContent };
+        initialSnapshotRef.current = {
+          title: data.title || "",
+          content: mergedContent,
+          caption: data.excerpt || "",
+        };
       } catch (err) {
         alert(err instanceof Error ? err.message : "加载文章失败");
         router.push("/admin/articles");
@@ -175,7 +182,8 @@ export default function ArticleEditorPage({ articleId }: ArticleEditorPageProps)
         type: "article" as const,
         title: title.trim(),
         content,
-        excerpt: title.trim(),
+        // excerpt 复用为朋友圈配文（卡片上方文字），不再用标题填充
+        excerpt: caption.trim(),
         cover,
         category: "",
         articleType,
@@ -222,19 +230,19 @@ export default function ArticleEditorPage({ articleId }: ArticleEditorPageProps)
     } finally {
       setSaving(null);
     }
-  }, [title, content, cover, articleType, repostUrl, region, likesDisabled, commentsDisabled, pinned, isEdit, articleId, router]);
+  }, [title, content, caption, cover, articleType, repostUrl, region, likesDisabled, commentsDisabled, pinned, isEdit, articleId, router]);
 
   // 判断是否有未保存改动
   // - 新建模式：标题或正文任一非空即视为有内容
   // - 编辑模式：与初始快照比较，任一不同即视为有改动
   const hasUnsavedContent = useCallback(() => {
     if (!isEdit) {
-      return title.trim().length > 0 || content.trim().length > 0;
+      return title.trim().length > 0 || content.trim().length > 0 || caption.trim().length > 0;
     }
     const snap = initialSnapshotRef.current;
     if (!snap) return false;
-    return snap.title !== title || snap.content !== content;
-  }, [title, content, isEdit]);
+    return snap.title !== title || snap.content !== content || snap.caption !== caption;
+  }, [title, content, caption, isEdit]);
 
   // 草稿提交状态记录：避免保存后触发 beforeunload 提示
   const savedDraftRef = useRef(false);
@@ -358,7 +366,23 @@ export default function ArticleEditorPage({ articleId }: ArticleEditorPageProps)
       {/* 左右分栏：编辑器（左/中） + 封面（右） — 桌面端各自独立滚动 */}
       <div className="flex flex-col gap-4 lg:min-h-0 lg:flex-1 lg:flex-row lg:gap-4 lg:overflow-hidden lg:py-4">
         {/* 编辑区域 — 桌面端独立滚动 */}
-        <div className="min-w-0 flex-1 lg:overflow-y-auto lg:pr-1">
+        <div className="min-w-0 flex-1 space-y-3 lg:overflow-y-auto lg:pr-1">
+          <div className="rounded-xl border border-adm-border bg-adm-card p-3 dark:bg-[#1e1e22]">
+            <label className="mb-1.5 block text-xs font-medium text-adm-text-secondary">
+              朋友圈配文
+            </label>
+            <textarea
+              value={caption}
+              onChange={(e) => setCaption(e.target.value)}
+              rows={3}
+              maxLength={500}
+              placeholder="可选。像发动态一样写一段文字，会显示在文章卡片上方"
+              className="w-full resize-y rounded-lg border border-adm-border bg-adm-input px-3 py-2 text-sm text-adm-text placeholder:text-adm-text-tertiary focus:outline-none focus:ring-2 focus:ring-gray-400/30"
+            />
+            <p className="mt-1 text-[11px] text-adm-text-tertiary">
+              不会进入文章正文，仅作为动态流中的配文展示
+            </p>
+          </div>
           <ArticleEditor
             value={content}
             onChange={setContent}

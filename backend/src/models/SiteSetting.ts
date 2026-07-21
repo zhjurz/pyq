@@ -8,6 +8,8 @@ interface SiteSettingAttributes {
   keywords: string;
   domain: string;
   beian: string;
+  /** 页面底部版权/页脚 HTML，可由后台编辑 */
+  footerHtml: string;
   faviconUrl: string;
   ogImage: string;
   backgroundImages: string;
@@ -62,7 +64,7 @@ interface SiteSettingAttributes {
 
 interface SiteSettingCreationAttributes extends Optional<
   SiteSettingAttributes,
-  "id" | "siteName" | "description" | "keywords" | "domain" | "beian" | "faviconUrl" | "ogImage" | "backgroundImages" | "darkModeEnabled" | "darkModeStartTime" | "darkModeEndTime" | "emailNotifyEnabled" | "notifyEmail" | "smtpHost" | "smtpPort" | "smtpSecure" | "smtpUser" | "smtpPass" | "smtpFrom" | "emailTemplate" | "amapJsKey" | "amapSecurityJsCode" | "amapKey" | "beianUrl" | "socialLinks" | "postCollapseLength" | "fontUrl" | "fontFamily" | "adOnArchives" | "commentAntiSpamEnabled" | "rssEnabled" | "rssIncludeMoments" | "doubanId" | "doubanCache" | "doubanSyncStatus" | "doubanSyncedAt" | "doubanLastError" | "doubanSyncLeaseId" | "doubanSyncLeaseExpiresAt" | "doubanLastAttemptAt" | "bannedWords" | "musicAutoplay"
+  "id" | "siteName" | "description" | "keywords" | "domain" | "beian" | "footerHtml" | "faviconUrl" | "ogImage" | "backgroundImages" | "darkModeEnabled" | "darkModeStartTime" | "darkModeEndTime" | "emailNotifyEnabled" | "notifyEmail" | "smtpHost" | "smtpPort" | "smtpSecure" | "smtpUser" | "smtpPass" | "smtpFrom" | "emailTemplate" | "amapJsKey" | "amapSecurityJsCode" | "amapKey" | "beianUrl" | "socialLinks" | "postCollapseLength" | "fontUrl" | "fontFamily" | "adOnArchives" | "commentAntiSpamEnabled" | "rssEnabled" | "rssIncludeMoments" | "doubanId" | "doubanCache" | "doubanSyncStatus" | "doubanSyncedAt" | "doubanLastError" | "doubanSyncLeaseId" | "doubanSyncLeaseExpiresAt" | "doubanLastAttemptAt" | "bannedWords" | "musicAutoplay"
 > {}
 
 class SiteSetting
@@ -75,6 +77,7 @@ class SiteSetting
   declare keywords: string;
   declare domain: string;
   declare beian: string;
+  declare footerHtml: string;
   declare faviconUrl: string;
   declare ogImage: string;
   declare backgroundImages: string;
@@ -147,6 +150,10 @@ SiteSetting.init(
       type: DataTypes.STRING(100),
       allowNull: false,
       defaultValue: "",
+    },
+    footerHtml: {
+      type: DataTypes.TEXT,
+      allowNull: false,
     },
     faviconUrl: {
       type: DataTypes.STRING(500),
@@ -338,10 +345,14 @@ SiteSetting.init(
   }
 );
 
+export const DEFAULT_FOOTER_HTML =
+  `© ${new Date().getFullYear()} <a href="https://kanle.net" target="_blank" rel="noopener noreferrer">kanle</a> by 小予 · 程序由AI生成`;
+
 export const siteSettingTextDefaults = {
   backgroundImages: "[]",
   emailTemplate: "",
   socialLinks: "[]",
-} satisfies Pick<SiteSettingCreationAttributes, "backgroundImages" | "emailTemplate" | "socialLinks">;
+  footerHtml: DEFAULT_FOOTER_HTML,
+} satisfies Pick<SiteSettingCreationAttributes, "backgroundImages" | "emailTemplate" | "socialLinks" | "footerHtml">;
 
 export default SiteSetting;

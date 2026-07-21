@@ -93,7 +93,7 @@ export interface Post {
   type?: "moment" | "article";
   /** 文章标题 */
   title?: string;
-  /** 文章摘要 */
+  /** 文章摘要 / 朋友圈配文（article 类型：显示在卡片上方的动态文字） */
   excerpt?: string;
   /** 文章封面图 URL */
   cover?: string;

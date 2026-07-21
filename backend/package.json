@@ -7,11 +7,11 @@
     "dev": "nodemon src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "db:seed": "ts-node src/scripts/seed.ts",
-    "db:sync": "ts-node src/scripts/sync.ts",
+    "db:init": "ts-node src/scripts/init-db.ts",
     "db:reset-likes": "ts-node src/scripts/reset-likes.ts",
     "db:migrate-douban-cache": "ts-node src/scripts/migrate-douban-cache.ts",
     "db:migrate-font-family": "ts-node src/scripts/migrate-font-family.ts",
+    "db:migrate-footer-html": "ts-node src/scripts/migrate-footer-html.ts",
     "music:migrate-r2": "ts-node src/scripts/migrate-r2-music.ts"
   },
   "keywords": [],

@@ -62,6 +62,7 @@ interface PostAttributes {
   /** moment=朋友圈动态（默认），article=长文章（带标题/封面/摘要） */
   type: "moment" | "article";
   title: string;
+  /** 文章摘要；article 类型也用作朋友圈配文 */
   excerpt: string;
   cover: string;
   category: string;

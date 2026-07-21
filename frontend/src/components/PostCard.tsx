@@ -2,7 +2,6 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useState, useRef, type CSSProperties } from "react";
 import { Music, Pause, Pin, FileText } from "lucide-react";
 import { Post, formatRelativeTime, getPostSourceLabel } from "@/lib/mock-data";
@@ -51,10 +50,14 @@ function stripRichEmbeds(html: string): string {
 }
 
 export default function PostCard({ post, index, onDelete }: PostCardProps) {
-  const router = useRouter();
   const isArticle = post.type === "article";
   const articleDetailUrl = `/articles/${post.shortId || post.id}`;
-  const articleExcerpt = post.excerpt || stripRichEmbeds(post.content || "").replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
+  // excerpt 优先作为朋友圈配文；卡片内摘要始终取正文纯文本，避免与配文重复
+  const articleCaption = (post.excerpt || "").trim();
+  const articleExcerpt = stripRichEmbeds(post.content || "")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .trim();
   const [likes, setLikes] = useState<Array<{ name: string; email?: string }>>(post.likes || []);
   const [liked, setLiked] = useState(false);
   const [liking, setLiking] = useState(false);
@@ -98,7 +101,7 @@ export default function PostCard({ post, index, onDelete }: PostCardProps) {
   }, [post.author.email, post.author.nickname]);
 
   // 长文折叠检测：纯文字字数超过配置阈值时显示展开/收起按钮
-  // article 类型始终折叠并跳转到详情页，moment 类型基于字数判断
+  // article 配文与 moment 正文一致，按字数折叠；无配文的文章不参与折叠
   useEffect(() => {
     const el = contentRef.current;
     if (!el) {
@@ -107,10 +110,10 @@ export default function PostCard({ post, index, onDelete }: PostCardProps) {
     }
     // 计算纯文本字数（去除 HTML 标签）
     const textLength = (el.textContent || "").replace(/\s/g, "").length;
-    // collapseLength=0 表示不折叠；article 总是折叠（点击进入详情页）
-    setClippable(isArticle || (collapseLength > 0 && textLength > collapseLength));
+    // collapseLength=0 表示不折叠
+    setClippable(collapseLength > 0 && textLength > collapseLength);
     setMeasured(true);
-  }, [post.content, collapseLength, isArticle]);
+  }, [post.content, post.excerpt, collapseLength, isArticle]);
 
   // 根据折叠字数和屏幕宽度动态计算 line-clamp 行数
   // 手机端每行约 18 个字，桌面端每行约 50 个字
@@ -341,7 +344,8 @@ export default function PostCard({ post, index, onDelete }: PostCardProps) {
           ) : null}
         </h3>
 
-        {!isArticle && post.content && (
+        {/* moment 正文，或 article 朋友圈配文 */}
+        {((!isArticle && post.content) || (isArticle && articleCaption)) && (
           <div className="mt-1">
             <div
               ref={contentRef}
@@ -353,17 +357,14 @@ export default function PostCard({ post, index, onDelete }: PostCardProps) {
                   ? ({ WebkitLineClamp: clampLines } as CSSProperties)
                   : undefined
               }
-              dangerouslySetInnerHTML={{ __html: renderContent(post.content) }}
+              dangerouslySetInnerHTML={{
+                __html: renderContent(isArticle ? articleCaption : post.content),
+              }}
             />
             {clippable && measured && (
               <button
                 type="button"
                 onClick={() => {
-                  // 文章类型：点击展开直接跳转到文章详情页
-                  if (isArticle) {
-                    router.push(articleDetailUrl);
-                    return;
-                  }
                   if (contentExpanded) {
                     const content = contentRef.current;
                     setContentExpanded(false);
@@ -383,7 +384,7 @@ export default function PostCard({ post, index, onDelete }: PostCardProps) {
                 }}
                 className="mt-1.5 text-[14px] text-[#b2b2b2] transition-opacity hover:opacity-70 active:opacity-50 dark:text-[#888]"
               >
-                {isArticle ? "展开" : contentExpanded ? "收起" : "展开"}
+                {contentExpanded ? "收起" : "展开"}
               </button>
             )}
           </div>

@@ -19,6 +19,8 @@ interface SiteSettingsState {
   beian: string;
   /** 备案号点击跳转链接 */
   beianUrl: string;
+  /** 页面底部版权 HTML */
+  footerHtml: string;
   /** 网站背景图轮播列表（URL 数组），每次访问随机展示一张 */
   backgroundImages: string[];
   /** 广告是否在归档页显示 */
@@ -78,6 +80,7 @@ export const useSiteSettings = create<SiteSettingsState>((set, get) => ({
   domain: "",
   beian: "",
   beianUrl: "",
+  footerHtml: "",
   backgroundImages: [],
   adOnArchives: false,
   defaultCover: "",
@@ -112,6 +115,7 @@ export const useSiteSettings = create<SiteSettingsState>((set, get) => ({
         domain: data.domain ?? "",
         beian: data.beian ?? "",
         beianUrl: data.beianUrl ?? "",
+        footerHtml: data.footerHtml ?? "",
         backgroundImages: bgImages,
         adOnArchives: data.adOnArchives ?? false,
         defaultCover: data.defaultCover ?? "",

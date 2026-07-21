@@ -37,6 +37,7 @@ interface SiteSettings {
   domain: string;
   beian: string;
   beianUrl: string;
+  footerHtml: string;
   faviconUrl: string;
   ogImage: string;
   socialLinks: string;
@@ -59,6 +60,7 @@ const DEFAULTS: SiteSettings = {
   domain: "",
   beian: "",
   beianUrl: "",
+  footerHtml: "",
   faviconUrl: "",
   ogImage: "",
   socialLinks: "[]",
@@ -544,6 +546,22 @@ export default function AdminSettings() {
           </div>
           <p className="mt-1.5 text-xs text-adm-text-tertiary">
             点击备案号跳转的链接，默认为工信部备案查询网站
+          </p>
+        </div>
+
+        <div className="mb-6">
+          <label className="mb-1.5 block text-xs font-medium text-adm-text-secondary">
+            底部版权 HTML
+          </label>
+          <textarea
+            value={form.footerHtml}
+            onChange={(e) => setForm({ ...form, footerHtml: e.target.value })}
+            rows={4}
+            className="w-full rounded-xl border border-adm-border bg-adm-input px-3 py-2.5 font-mono text-sm text-adm-text transition-colors focus:border-adm-text-secondary focus:bg-adm-input-focus focus:outline-none focus:ring-1 focus:ring-adm-text-secondary"
+            placeholder='© 2026 <a href="https://example.com" target="_blank" rel="noopener noreferrer">站点名</a>'
+          />
+          <p className="mt-1.5 text-xs text-adm-text-tertiary">
+            显示在页面底部的版权/页脚信息，支持基础 HTML（如链接）。留空则不显示版权文案。
           </p>
         </div>
 
