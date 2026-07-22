@@ -818,4 +818,4 @@ pnpm dev
 
 [MIT](LICENSE)
 
-Copyright (c) 2026 reii
+Copyright (c) 2026 zhjurz
