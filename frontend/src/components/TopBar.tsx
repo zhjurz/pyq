@@ -432,6 +432,7 @@ export default function TopBar({ coverHeight = 300 }: TopBarProps) {
         >
           {/* Left: music player + lyric (mobile: full width, desktop: same) */}
           {/* 后端未配置歌单时隐藏整个音乐区域（activePostMusic 仍可接管播放） */}
+          <div className="flex-1 min-w-0" />
           {(!musicLoaded || musicUrl || playlist.length > 0 || activePostMusic) && (
           <div className="flex min-w-0 items-center gap-1.5">
             {/* Music player + lyric */}
