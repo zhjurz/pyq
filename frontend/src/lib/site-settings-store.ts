@@ -21,6 +21,8 @@ interface SiteSettingsState {
   beianUrl: string;
   /** 页面底部版权 HTML */
   footerHtml: string;
+  /** 桌面端背景装饰图 URL，为空时不显示桌面装饰 */
+  decorationImage: string;
   /** 网站背景图轮播列表（URL 数组），每次访问随机展示一张 */
   backgroundImages: string[];
   /** 广告是否在归档页显示 */
@@ -81,6 +83,7 @@ export const useSiteSettings = create<SiteSettingsState>((set, get) => ({
   beian: "",
   beianUrl: "",
   footerHtml: "",
+  decorationImage: "",
   backgroundImages: [],
   adOnArchives: false,
   defaultCover: "",
@@ -116,6 +119,7 @@ export const useSiteSettings = create<SiteSettingsState>((set, get) => ({
         beian: data.beian ?? "",
         beianUrl: data.beianUrl ?? "",
         footerHtml: data.footerHtml ?? "",
+        decorationImage: data.decorationImage ?? "",
         backgroundImages: bgImages,
         adOnArchives: data.adOnArchives ?? false,
         defaultCover: data.defaultCover ?? "",

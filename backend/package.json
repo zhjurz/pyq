@@ -12,6 +12,7 @@
     "db:migrate-douban-cache": "ts-node src/scripts/migrate-douban-cache.ts",
     "db:migrate-font-family": "ts-node src/scripts/migrate-font-family.ts",
     "db:migrate-footer-html": "ts-node src/scripts/migrate-footer-html.ts",
+    "db:migrate-decoration-image": "ts-node src/scripts/migrate-decoration-image.ts",
     "music:migrate-r2": "ts-node src/scripts/migrate-r2-music.ts"
   },
   "keywords": [],

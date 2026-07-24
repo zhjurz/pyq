@@ -4,6 +4,7 @@ import { MusicPlaylist, sequelize, SiteSetting, siteSettingTextDefaults, User } 
 import { migrateDoubanCache } from "./migrate-douban-cache";
 import { migrateFontFamily } from "./migrate-font-family";
 import { migrateFooterHtml } from "./migrate-footer-html";
+import { migrateDecorationImage } from "./migrate-decoration-image";
 
 dotenv.config();
 
@@ -94,6 +95,7 @@ export async function initializeDatabase() {
   await migrateDoubanCache();
   await migrateFontFamily();
   await migrateFooterHtml();
+  await migrateDecorationImage();
 
   await ensureSiteSettings();
   await ensureDefaultPlaylist();

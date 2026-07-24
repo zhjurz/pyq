@@ -10,6 +10,8 @@ interface SiteSettingAttributes {
   beian: string;
   /** 页面底部版权/页脚 HTML，可由后台编辑 */
   footerHtml: string;
+  /** 桌面端背景装饰图 URL，为空时不显示桌面装饰 */
+  decorationImage: string;
   faviconUrl: string;
   ogImage: string;
   backgroundImages: string;
@@ -64,7 +66,7 @@ interface SiteSettingAttributes {
 
 interface SiteSettingCreationAttributes extends Optional<
   SiteSettingAttributes,
-  "id" | "siteName" | "description" | "keywords" | "domain" | "beian" | "footerHtml" | "faviconUrl" | "ogImage" | "backgroundImages" | "darkModeEnabled" | "darkModeStartTime" | "darkModeEndTime" | "emailNotifyEnabled" | "notifyEmail" | "smtpHost" | "smtpPort" | "smtpSecure" | "smtpUser" | "smtpPass" | "smtpFrom" | "emailTemplate" | "amapJsKey" | "amapSecurityJsCode" | "amapKey" | "beianUrl" | "socialLinks" | "postCollapseLength" | "fontUrl" | "fontFamily" | "adOnArchives" | "commentAntiSpamEnabled" | "rssEnabled" | "rssIncludeMoments" | "doubanId" | "doubanCache" | "doubanSyncStatus" | "doubanSyncedAt" | "doubanLastError" | "doubanSyncLeaseId" | "doubanSyncLeaseExpiresAt" | "doubanLastAttemptAt" | "bannedWords" | "musicAutoplay"
+  "id" | "siteName" | "description" | "keywords" | "domain" | "beian" | "footerHtml" | "decorationImage" | "faviconUrl" | "ogImage" | "backgroundImages" | "darkModeEnabled" | "darkModeStartTime" | "darkModeEndTime" | "emailNotifyEnabled" | "notifyEmail" | "smtpHost" | "smtpPort" | "smtpSecure" | "smtpUser" | "smtpPass" | "smtpFrom" | "emailTemplate" | "amapJsKey" | "amapSecurityJsCode" | "amapKey" | "beianUrl" | "socialLinks" | "postCollapseLength" | "fontUrl" | "fontFamily" | "adOnArchives" | "commentAntiSpamEnabled" | "rssEnabled" | "rssIncludeMoments" | "doubanId" | "doubanCache" | "doubanSyncStatus" | "doubanSyncedAt" | "doubanLastError" | "doubanSyncLeaseId" | "doubanSyncLeaseExpiresAt" | "doubanLastAttemptAt" | "bannedWords" | "musicAutoplay"
 > {}
 
 class SiteSetting
@@ -78,6 +80,7 @@ class SiteSetting
   declare domain: string;
   declare beian: string;
   declare footerHtml: string;
+  declare decorationImage: string;
   declare faviconUrl: string;
   declare ogImage: string;
   declare backgroundImages: string;
@@ -154,6 +157,11 @@ SiteSetting.init(
     footerHtml: {
       type: DataTypes.TEXT,
       allowNull: false,
+    },
+    decorationImage: {
+      type: DataTypes.STRING(500),
+      allowNull: false,
+      defaultValue: "",
     },
     faviconUrl: {
       type: DataTypes.STRING(500),
