@@ -528,23 +528,22 @@ export default function TopBar({ coverHeight = 300 }: TopBarProps) {
           </div>
           )}
 
-          {/* Right: friends + publish/login (mobile only, desktop uses left side) */}
+          {/* Right: search + friends + publish/login */}
           <div className="relative flex shrink-0 items-center gap-1.5">
-            {/* 友链按钮：友链和豆瓣都为空时隐藏（加载中仍显示以避免闪烁） */}
-          {/* 搜索按钮 — 绝对定位在 TopBar 右上角，不受 flex justify-between 左右移动影响 */}
+            {/* 搜索按钮 */}
             <button
               type="button"
               onClick={() => { setShowSearch((v) => { const next = !v; if (!next) { setSearchQuery(""); setSearchResults([]); } return next; }); }}
-              className={`absolute right-4 top-[10px] z-50 flex h-7 w-7 items-center justify-center rounded-full sm:right-5 md:right-6 ${showSearch ? "" : iconClass}`}
+              className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${showSearch ? "bg-wechat-link/15 text-wechat-link dark:bg-white/15" : iconClass}`}
               aria-label="搜索"
             >
               <Search className="h-[18px] w-[18px]" />
             </button>
 
-            {/* 搜索面板 — 钉在 header 右边缘下方，不随内部 flex 飘移 */}
+            {/* 搜索面板 */}
             {showSearch && (
               <div
-                className="absolute right-4 top-[44px] z-50 w-[280px] rounded-2xl border border-wechat-border bg-wechat-white shadow-[0_8px_32px_-12px_rgba(0,0,0,0.18)] dark:border-white/10 dark:bg-[#232328] dark:shadow-[0_8px_32px_-12px_rgba(0,0,0,0.55)] sm:right-5 md:right-6 md:w-[320px]"
+                className="absolute right-0 top-full z-50 mt-2 w-[280px] rounded-2xl border border-wechat-border bg-wechat-white shadow-[0_8px_32px_-12px_rgba(0,0,0,0.18)] dark:border-white/10 dark:bg-[#232328] dark:shadow-[0_8px_32px_-12px_rgba(0,0,0,0.55)] md:w-[320px]"
               >
                 <div className="flex items-center gap-2 border-b border-wechat-border px-3 py-2 dark:border-white/10">
                   <Search className="h-4 w-4 shrink-0 text-wechat-time" />
