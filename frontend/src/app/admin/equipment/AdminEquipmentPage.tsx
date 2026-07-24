@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { getToken } from "@/lib/auth";
-import { ArrowLeft, Loader2, Plus, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 interface EquipItem {

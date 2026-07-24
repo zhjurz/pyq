@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { getToken } from "@/lib/auth";
-import { Loader2, X } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import ArticleEditor from "@/components/ArticleEditor";
 
 export default function AboutSettingsSection() {
