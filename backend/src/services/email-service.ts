@@ -144,6 +144,34 @@ interface CommentNotifyData {
   commentId: string;
 }
 
+/**
+ * 对指定异步任务进行有限次重试（指数退避）。
+ * 仅在发生网络/连接类错误时重试；认证错误（如无效凭据）立即失败，不浪费重试。
+ */
+async function withRetry<T>(fn: () => Promise<T>, maxRetries: number = 2, baseDelayMs: number = 5000): Promise<T> {
+  let lastError: any;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      lastError = err;
+      const code: string = (err?.code || "").toUpperCase();
+
+      // SMTP 认证 / 策略类错误：不重试，立即失败
+      if (["EAUTH", "EENVELOPE"].includes(code)) {
+        throw err;
+      }
+
+      if (attempt < maxRetries) {
+        const delay = baseDelayMs * Math.pow(2, attempt);
+        console.warn(`[email] 第 ${attempt + 1} 次尝试失败，${delay}ms 后重试: ${err?.message || err}`);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+  }
+  throw lastError;
+}
+
 /** 创建 nodemailer transporter */
 async function createTransporter(): Promise<{
   transporter: nodemailer.Transporter;
@@ -247,23 +275,27 @@ export async function sendCommentNotification(data: CommentNotifyData): Promise<
 
     // 1. 通知博主（评论者自己是博主时跳过，避免自己通知自己）
     if (actorEmail && actorEmail !== ownerEmail) {
-      await ctx.transporter.sendMail({
-        from: ctx.from,
-        to: ctx.to,
-        subject,
-        html,
-      });
+      await withRetry(() =>
+        ctx.transporter.sendMail({
+          from: ctx.from,
+          to: ctx.to,
+          subject,
+          html,
+        })
+      );
       console.log(`[email] 博主通知已发送至 ${ctx.to}: ${subject}`);
     }
 
     // 2. 通知被回复者（回复场景）：排除自己回复自己、排除博主（已在上面通知过）
     if (replyToEmail && replyToEmail !== actorEmail && replyToEmail !== ownerEmail) {
-      await ctx.transporter.sendMail({
-        from: ctx.from,
-        to: data.replyToEmail!,
-        subject,
-        html,
-      });
+      await withRetry(() =>
+        ctx.transporter.sendMail({
+          from: ctx.from,
+          to: data.replyToEmail!,
+          subject,
+          html,
+        })
+      );
       console.log(`[email] 被回复者通知已发送至 ${data.replyToEmail}: ${subject}`);
     }
   } catch (err) {
@@ -311,7 +343,9 @@ export async function sendTestEmail(): Promise<{
     const html = renderTemplate(templateHtml, vars);
     const subject = `测试邮件 - ${siteName}`;
 
-    await ctx.transporter.sendMail({ from: ctx.from, to: ctx.to, subject, html });
+    await withRetry(() =>
+      ctx.transporter.sendMail({ from: ctx.from, to: ctx.to, subject, html })
+    );
     return { success: true, message: `测试邮件已发送至 ${ctx.to}` };
   } catch (err) {
     console.error("[email] 测试邮件发送失败:", err);
