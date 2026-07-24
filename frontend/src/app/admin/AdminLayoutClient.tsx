@@ -99,6 +99,14 @@ export default function AdminLayoutClient({
       ],
     },
     {
+      label: "其他功能",
+      items: [
+        { href: "/admin/about", label: "关于页面", icon: LayoutDashboard },
+        { href: "/admin/equipment", label: "装备管理", icon: LayoutDashboard },
+        { href: "/admin/labs", label: "Labs 管理", icon: LayoutDashboard },
+      ],
+    },
+    {
       label: "设置",
       items: [
         { href: "/admin/users", label: "个人资料", icon: User },

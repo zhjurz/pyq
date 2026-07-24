@@ -10,6 +10,7 @@ import { toAbsoluteUrl } from "@/lib/upload";
 import { PublishModal, type LoggedInUser } from "@/components/TopBar";
 import { SocialIcon, getSocialPlatform } from "@/components/SocialIcons";
 import AdminNotifications from "@/components/AdminNotifications";
+import FeatureCards from "@/components/FeatureCards";
 
 interface FriendLink {
   id: string;
@@ -513,6 +514,8 @@ export default function Sidebar({ owner }: SidebarProps) {
           </div>
         )}
       </div>
+
+      <FeatureCards />
 
       {/* Publish Modal */}
       {showPublish && loggedIn && (

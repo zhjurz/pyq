@@ -5,6 +5,7 @@ import { migrateDoubanCache } from "./migrate-douban-cache";
 import { migrateFontFamily } from "./migrate-font-family";
 import { migrateFooterHtml } from "./migrate-footer-html";
 import { migrateDecorationImage } from "./migrate-decoration-image";
+import { migrateAboutContent } from "./migrate-about-content";
 
 dotenv.config();
 
@@ -96,6 +97,7 @@ export async function initializeDatabase() {
   await migrateFontFamily();
   await migrateFooterHtml();
   await migrateDecorationImage();
+  await migrateAboutContent();
 
   await ensureSiteSettings();
   await ensureDefaultPlaylist();

@@ -61,6 +61,8 @@ const ALL_SHORTCUTS = [
   { key: "music", label: "R2 音乐歌单", icon: Music, href: "/admin/music", desc: "管理 R2 上传的背景音乐" },
   { key: "media", label: "媒体库", icon: Library, href: "/admin/media", desc: "管理图片、视频、音频文件" },
   { key: "storage", label: "云端存储", icon: Cloud, href: "/admin/storage", desc: "管理云存储服务商配置" },
+  { key: "equipment", label: "装备管理", icon: LayoutDashboard, href: "/admin/equipment", desc: "管理装备展示页" },
+  { key: "labs", label: "Labs 管理", icon: LayoutDashboard, href: "/admin/labs", desc: "管理 Labs 展示页" },
   { key: "settings", label: "网站设置", icon: Settings2, href: "/admin/settings", desc: "配置网站基本信息" },
 ];
 

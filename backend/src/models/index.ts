@@ -11,6 +11,7 @@ import Media from "./Media";
 import MusicPlaylist from "./MusicPlaylist";
 import MusicTrack from "./MusicTrack";
 import UploadIntent from "./UploadIntent";
+import Equipment from "./Equipment";
 
 // Associations
 User.hasMany(Post, { foreignKey: "userId", as: "posts" });
@@ -54,6 +55,7 @@ export {
   MusicPlaylist,
   MusicTrack,
   UploadIntent,
+  Equipment,
   siteSettingTextDefaults,
 };
 export { getMediaCategory } from "./Media";

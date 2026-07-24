@@ -13,6 +13,7 @@
     "db:migrate-font-family": "ts-node src/scripts/migrate-font-family.ts",
     "db:migrate-footer-html": "ts-node src/scripts/migrate-footer-html.ts",
     "db:migrate-decoration-image": "ts-node src/scripts/migrate-decoration-image.ts",
+    "db:migrate-about-content": "ts-node src/scripts/migrate-about-content.ts",
     "music:migrate-r2": "ts-node src/scripts/migrate-r2-music.ts"
   },
   "keywords": [],
