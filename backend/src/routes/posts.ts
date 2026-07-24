@@ -1142,4 +1142,46 @@ router.put("/likes/update-name", async (req: AuthRequest, res: Response) => {
   res.json({ updated, newName });
 });
 
+// GET /api/posts/search?q=keyword — compact keyword search (title, excerpt, content)
+router.get("/search", async (req: Request, res: Response) => {
+  const q = String(req.query.q || "").trim();
+  if (!q) {
+    res.json([]);
+    return;
+  }
+
+  const posts = await Post.findAll({
+    where: {
+      isAd: false,
+      status: "published",
+      [Op.or]: [
+        { title: { [Op.like]: `%${q}%` } },
+        { excerpt: { [Op.like]: `%${q}%` } },
+        { content: { [Op.like]: `%${q}%` } },
+      ],
+    },
+    include: [
+      { model: User, as: "author", attributes: ["id", "email", "nickname", "avatar"] },
+    ],
+    order: [["createdAt", "DESC"]],
+    limit: 20,
+  });
+
+  const results = posts.map((p: any) => ({
+    id: p.id,
+    shortId: p.shortId,
+    type: p.type,
+    title: p.title || "",
+    excerpt: getExcerpt(p),
+    content: (p.content || "").replace(/<[^>]*>/g, "").slice(0, 120),
+    cover: p.cover || "",
+    createdAt: p.createdAt,
+    author: p.author
+      ? { nickname: p.author.nickname, avatar: p.author.avatar }
+      : undefined,
+  }));
+
+  res.json(results);
+});
+
 export default router;

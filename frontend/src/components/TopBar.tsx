@@ -28,6 +28,7 @@ import {
   Music,
   Upload,
   ChevronRight,
+  Search,
   ExternalLink,
   LayoutDashboard,
   Pencil,
@@ -160,6 +161,12 @@ export default function TopBar({ coverHeight = 300 }: TopBarProps) {
   // 豆瓣数据预检查：用于决定是否显示"影单"tab和友链按钮
   const [hasDouban, setHasDouban] = useState(false);
   const [doubanLoaded, setDoubanLoaded] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searching, setSearching] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Fetch friend links + douban existence check（音乐数据由 GlobalMusicManager 全局管理）
   useEffect(() => {
@@ -185,7 +192,35 @@ export default function TopBar({ coverHeight = 300 }: TopBarProps) {
       .finally(() => setDoubanLoaded(true));
   }, []);
 
-  // 友链分页：加载更多
+  // 搜索防抖：输入 300ms 后自动请求
+  useEffect(() => {
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+    }
+    const q = searchQuery.trim();
+    if (!q) {
+      setSearchResults([]);
+      return;
+    }
+    searchDebounceRef.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const res = await fetch(`${API_URL}/posts/search?q=${encodeURIComponent(q)}`);
+        if (res.ok) {
+          setSearchResults(await res.json());
+        } else {
+          setSearchResults([]);
+        }
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+    return () => {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    };
+  }, [searchQuery]);
   const loadMoreFriends = useCallback(async () => {
     if (friendsLoadingRef.current || !friendsHasMore) return;
     friendsLoadingRef.current = true;
@@ -493,9 +528,98 @@ export default function TopBar({ coverHeight = 300 }: TopBarProps) {
           </div>
           )}
 
-          {/* Right: friends + publish/login (mobile only, desktop uses left side) */}
+          {/* Right: search + friends + publish/login */}
           <div className="flex shrink-0 items-center gap-1.5">
-            {/* 友链按钮：友链和豆瓣都为空时隐藏（加载中仍显示以避免闪烁） */}
+            {/* 搜索按钮 – 固定在右上角 */}
+            <button
+              type="button"
+              onClick={() => { setShowSearch((v) => { const next = !v; if (!next) { setSearchQuery(""); setSearchResults([]); } return next; }); }}
+              className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${showSearch ? "bg-wechat-link/15 text-wechat-link dark:bg-white/15" : iconClass}`}
+              aria-label="搜索"
+            >
+              <Search className="h-[18px] w-[18px]" />
+            </button>
+
+            {/* 搜索面板 – 与白色栏一起固定 */}
+            {showSearch && (
+              <div
+                className={`absolute right-3 top-12 z-50 w-[280px] rounded-2xl border border-wechat-border bg-wechat-white shadow-[0_8px_32px_-12px_rgba(0,0,0,0.18)] dark:border-white/10 dark:bg-[#232328] dark:shadow-[0_8px_32px_-12px_rgba(0,0,0,0.55)] md:w-[320px] ${frosted ? "" : "bg-wechat-white"}`}
+              >
+                <div className="flex items-center gap-2 border-b border-wechat-border px-3 py-2 dark:border-white/10">
+                  <Search className="h-4 w-4 shrink-0 text-wechat-time" />
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="搜索动态 / 文章…"
+                    className="flex-1 bg-transparent text-sm text-wechat-text outline-none placeholder:text-wechat-time"
+                    autoFocus
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => { setSearchQuery(""); setSearchResults([]); }}
+                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-wechat-time hover:text-wechat-text"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+                {/* Results */}
+                <div className="max-h-[340px] overflow-y-auto">
+                  {searching && searchResults.length === 0 && (
+                    <div className="py-8 text-center text-xs text-wechat-time">搜索中…</div>
+                  )}
+                  {!searching && searchQuery.trim() && searchResults.length === 0 && (
+                    <div className="py-8 text-center text-xs text-wechat-time">无结果</div>
+                  )}
+                  {searchResults.map((item: any) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        const path = item.type === "article"
+                          ? `/articles/${item.shortId || item.id}`
+                          : `/moments/${item.shortId || item.id}`;
+                        setShowSearch(false);
+                        setSearchQuery("");
+                        setSearchResults([]);
+                        router.push(path);
+                      }}
+                      className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-wechat-hover dark:hover:bg-white/5"
+                    >
+                      {item.cover ? (
+                        <div className="mt-0.5 h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-wechat-bubble dark:bg-white/5">
+                          <LazyImage
+                            src={item.cover}
+                            alt={item.title || item.excerpt || ""}
+                            className="h-full w-full object-cover"
+                          />
+                        </div>
+                      ) : null}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          {item.type === "article" && (
+                            <span className="shrink-0 rounded-[3px] bg-wechat-link/10 px-1 py-0 text-[10px] font-medium text-wechat-link dark:bg-white/10">文</span>
+                          )}
+                          <span className="truncate text-[13px] font-medium text-wechat-text">
+                            {item.title || item.excerpt || "无标题"}
+                          </span>
+                        </div>
+                        {(item.excerpt || item.content) && (
+                          <p className="line-clamp-1 mt-0.5 text-[11px] leading-relaxed text-wechat-time">
+                            {item.excerpt || item.content}
+                          </p>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 友链按钮 */}
             {((!friendsLoaded || !doubanLoaded) || friendLinks.length > 0 || hasDouban) && (
             <button
               type="button"
