@@ -40,6 +40,7 @@ interface SiteSettings {
   footerHtml: string;
   faviconUrl: string;
   ogImage: string;
+  backgroundImages: string;
   socialLinks: string;
   postCollapseLength: number;
   darkModeEnabled: boolean;
@@ -63,6 +64,7 @@ const DEFAULTS: SiteSettings = {
   footerHtml: "",
   faviconUrl: "",
   ogImage: "",
+  backgroundImages: "[]",
   socialLinks: "[]",
   postCollapseLength: 150,
   darkModeEnabled: false,
@@ -313,6 +315,149 @@ function ImageField({
   );
 }
 
+function BackgroundImagesEditor({
+  value,
+  onChange,
+  token,
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  token: string;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  let images: string[] = [];
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) images = parsed.filter((u: any) => typeof u === "string");
+  } catch { images = []; }
+
+  const emit = (list: string[]) => onChange(JSON.stringify(list));
+
+  const handleUpload = async (file: File) => {
+    setUploading(true);
+    try {
+      const url = await uploadImage(file, token);
+      emit([...images, url]);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "上传失败");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const [editingUrl, setEditingUrl] = useState("");
+  const [showUrlInput, setShowUrlInput] = useState(false);
+
+  return (
+    <div className="space-y-3 mt-3">
+      {/* existing images as a strip */}
+      <div className="flex flex-wrap gap-2">
+        {images.map((url, i) => (
+          <div key={`${i}-${url}`} className="group relative h-20 w-20 shrink-0 overflow-hidden rounded-lg bg-adm-input">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={url} alt="" className="h-full w-full object-cover" />
+            <button
+              type="button"
+              onClick={() => emit(images.filter((_, j) => j !== i))}
+              className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100"
+            >
+              <Trash2 className="h-3 w-3" />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {/* URL adder */}
+      {showUrlInput ? (
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={editingUrl}
+            onChange={(e) => setEditingUrl(e.target.value)}
+            placeholder="https://example.com/bg.jpg"
+            className="flex-1 rounded-xl border border-adm-border bg-adm-input px-3 py-2 text-sm text-adm-text"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              const trimmed = editingUrl.trim();
+              if (trimmed) {
+                emit([...images, trimmed]);
+                setEditingUrl("");
+              }
+              setShowUrlInput(false);
+            }}
+            className="rounded-lg bg-adm-primary px-4 py-2 text-xs font-medium text-white"
+          >
+            添加
+          </button>
+          <button
+            type="button"
+            onClick={() => { setShowUrlInput(false); setEditingUrl(""); }}
+            className="rounded-lg border border-adm-border px-3 py-2 text-xs text-adm-text-secondary"
+          >
+            取消
+          </button>
+        </div>
+      ) : null}
+
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => setShowUrlInput(true)}
+          className="flex items-center gap-1.5 rounded-lg border border-adm-border bg-adm-card px-3 py-1.5 text-xs text-adm-text-secondary transition-colors hover:bg-adm-card-hover"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          添加 URL
+        </button>
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={uploading}
+          className="flex items-center gap-1.5 rounded-lg border border-adm-border bg-adm-card px-3 py-1.5 text-xs text-adm-text-secondary transition-colors hover:bg-adm-card-hover disabled:opacity-50"
+        >
+          <Upload className="h-3.5 w-3.5" />
+          {uploading ? "上传中..." : "上传图片"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setPickerOpen(true)}
+          className="flex items-center gap-1.5 rounded-lg border border-adm-border bg-adm-card px-3 py-1.5 text-xs text-adm-text-secondary transition-colors hover:bg-adm-card-hover"
+        >
+          <Library className="h-3.5 w-3.5" />
+          选择
+        </button>
+      </div>
+
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleUpload(file);
+          e.target.value = "";
+        }}
+        className="hidden"
+      />
+
+      <MediaPicker
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        category="image"
+        title="选择背景图"
+        onSelect={(item) => {
+          emit([...images, item.url]);
+          setPickerOpen(false);
+        }}
+      />
+    </div>
+  );
+}
+
 export default function AdminSettings() {
   const router = useRouter();
   const [form, setForm] = useState<SiteSettings>(DEFAULTS);
@@ -503,6 +648,22 @@ export default function AdminSettings() {
           token={token || ""}
           previewClass="h-20 w-32 rounded-xl"
         />
+
+        {/* Background image carousel */}
+        <div className="mb-6 mt-8 flex items-center gap-2 border-b border-adm-border pb-3">
+          <ImageIcon className="h-4 w-4 text-adm-text-tertiary" />
+          <h3 className="text-sm font-semibold text-adm-text">背景图轮播</h3>
+        </div>
+        <div className="mb-6">
+          <p className="text-xs text-adm-text-tertiary">
+            首页顶部轮播背景图。输入图片 URL，每行一个；也支持上传或从媒体库选择。
+          </p>
+          <BackgroundImagesEditor
+            value={form.backgroundImages}
+            onChange={(backgroundImages) => setForm({ ...form, backgroundImages })}
+            token={token || ""}
+          />
+        </div>
 
         {/* Legal section */}
         <div className="mb-6 mt-8 flex items-center gap-2 border-b border-adm-border pb-3">
