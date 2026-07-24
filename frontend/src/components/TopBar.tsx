@@ -529,7 +529,7 @@ export default function TopBar({ coverHeight = 300 }: TopBarProps) {
           )}
 
           {/* Right: search + friends + publish/login */}
-          <div className="flex shrink-0 items-center gap-1.5">
+          <div className="relative flex shrink-0 items-center gap-1.5">
             {/* 搜索按钮 – 固定在右上角 */}
             <button
               type="button"
@@ -540,10 +540,10 @@ export default function TopBar({ coverHeight = 300 }: TopBarProps) {
               <Search className="h-[18px] w-[18px]" />
             </button>
 
-            {/* 搜索面板 – 与白色栏一起固定 */}
+            {/* 搜索面板 – 相对于右侧按钮组定位，悬空时浮在最上方 */}
             {showSearch && (
               <div
-                className={`absolute right-3 top-12 z-50 w-[280px] rounded-2xl border border-wechat-border bg-wechat-white shadow-[0_8px_32px_-12px_rgba(0,0,0,0.18)] dark:border-white/10 dark:bg-[#232328] dark:shadow-[0_8px_32px_-12px_rgba(0,0,0,0.55)] md:w-[320px] ${frosted ? "" : "bg-wechat-white"}`}
+                className="absolute right-0 top-full z-50 mt-2 w-[280px] rounded-2xl border border-wechat-border bg-wechat-white shadow-[0_8px_32px_-12px_rgba(0,0,0,0.18)] dark:border-white/10 dark:bg-[#232328] dark:shadow-[0_8px_32px_-12px_rgba(0,0,0,0.55)] md:w-[320px]"
               >
                 <div className="flex items-center gap-2 border-b border-wechat-border px-3 py-2 dark:border-white/10">
                   <Search className="h-4 w-4 shrink-0 text-wechat-time" />
